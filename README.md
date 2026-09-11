@@ -1,17 +1,32 @@
-# mirs_ble_app
+# MIRS BLE App
 
-A new Flutter project.
+MIRS ロボットへ BLE 経由で清掃範囲ミッションを送信する Flutter アプリです。
 
-## Getting Started
+## 構成
 
-This project is a starting point for a Flutter application.
+- `lib/models/cleaning_zone.dart`: 座標と清掃範囲ミッションのモデル、JSON 化、入力検証
+- `lib/ble_service.dart`: BLE スキャン・接続・Characteristic 検出・送信・切断
+- `lib/main.dart`: 権限要求と画面表示。通信や JSON の詳細はサービス・モデルに依存
 
-A few resources to get you started if this is your first Flutter project:
+## 実行と検証
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```sh
+flutter pub get
+flutter analyze
+flutter test
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+接続対象は、指定されたサービスUUID
+（`12345678-1234-1234-1234-123456789abc`）を広告するデバイスだけです。
+デバイス名は接続対象の判定には使用しません。
+
+ミッション送信後はResponse Characteristic
+（`12345678-1234-1234-1234-123456789abe`）を読み取り、`ACK` で受信側の検証・ROS 2配信成功、
+`NACK` で失敗を判定します。
+
+### Android release署名
+
+releaseビルドはdebug署名へフォールバックしません。正式配布前に
+`android/key.properties.example` を `android/key.properties` としてコピーし、
+実際のkeystore情報を設定してください。`key.properties` とkeystoreファイルは
+リポジトリへ追加しないでください。
