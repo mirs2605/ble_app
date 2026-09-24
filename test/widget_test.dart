@@ -97,7 +97,10 @@ void main() {
       y: MapGeometry.originY + MapGeometry.heightMeters / 2,
     );
 
-    expect(MapGeometry.toScreenPoint(point, size), const Offset(280.5, 387.5));
+    // 浮動小数点の丸め(280.49999...)を許容するため誤差付き比較にする
+    final screen = MapGeometry.toScreenPoint(point, size);
+    expect(screen.dx, moreOrLessEquals(280.5, epsilon: 0.000001));
+    expect(screen.dy, moreOrLessEquals(387.5, epsilon: 0.000001));
     expect(
       MapGeometry.fromLocal(const Offset(561, 775), size),
       const MapPoint(
@@ -145,13 +148,14 @@ void main() {
   });
 
   test('fits the map inside the available area without distortion', () {
+    // 期待値は現行マップ画像(303x225, aspect=303/225)から算出
     final wideArea = MapGeometry.fitWithin(const Size(1000, 600));
-    expect(wideArea.width, closeTo(434.3225806451613, 0.000001));
+    expect(wideArea.width, closeTo(808.0, 0.000001));
     expect(wideArea.height, closeTo(600, 0.000001));
 
     final tallArea = MapGeometry.fitWithin(const Size(400, 1000));
     expect(tallArea.width, closeTo(400, 0.000001));
-    expect(tallArea.height, closeTo(552.5846702310463, 0.000001));
+    expect(tallArea.height, closeTo(297.029702970297, 0.000001));
   });
 
   test('only matches the configured BLE service UUID', () {
