@@ -1,41 +1,18 @@
-// BLE通信のロジックを管理するサービスクラス
+// BLE通信のオーケストレーション。送受信の実体は [BleAdapter] に委ね、
+// このクラスは状態遷移・ログ・再試行方針に徹する。
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../models/cleaning_zone.dart';
+import 'ble_adapter.dart';
+import 'ble_connection.dart';
+import 'flutter_blue_plus_adapter.dart';
 
-/// GATT UUID（Pythonサーバー側と一致させること）
-class BleUuids {
-  static const String serviceUuid = '12345678-1234-1234-1234-123456789abc';
-  static const String missionCharUuid = '12345678-1234-1234-1234-123456789abd';
-  static const String responseCharUuid = '12345678-1234-1234-1234-123456789abe';
-}
-
-class BleTargetMatcher {
-  const BleTargetMatcher._();
-
-  static bool matchesServiceUuid(Iterable<String> advertisedUuids) {
-    return advertisedUuids.any(
-      (uuid) => uuid.toLowerCase() == BleUuids.serviceUuid.toLowerCase(),
-    );
-  }
-}
-
-class BleConnectionRequirements {
-  const BleConnectionRequirements._();
-
-  static bool hasWritableMissionAndReadableResponse({
-    required bool missionFound,
-    required bool missionWritable,
-    required bool responseFound,
-    required bool responseReadable,
-  }) {
-    return missionFound && missionWritable && responseFound && responseReadable;
-  }
-}
+/// BLE接続の状態は [BleConnection] 側に定義（循環import回避）。
+/// 既存の `ble_service.dart` からの参照互換のため再exportする。
+export 'ble_connection.dart' show BleStatus;
+export 'ble_protocol.dart'
+    show BleUuids, BleTargetMatcher, BleConnectionRequirements;
 
 class BlePayloadChunker {
   const BlePayloadChunker._();
@@ -77,28 +54,22 @@ class BleResponse {
   }
 }
 
-/// BLE接続の状態
-enum BleStatus {
-  idle,
-  scanning,
-  connecting,
-  connected,
-  sending,
-  disconnected,
-  error,
-}
-
 /// BLE通信を管理するサービス
-class BleService {
-  BluetoothDevice? _device;
-  BluetoothCharacteristic? _missionChar;
-  BluetoothCharacteristic? _responseChar;
-  StreamSubscription<BluetoothConnectionState>? _connectionStateSub;
+class BleService implements BleConnection {
+  static const scanTimeout = Duration(seconds: 8);
+  static const connectTimeout = Duration(seconds: 10);
+  static const responseTimeout = Duration(seconds: 5);
+  static const maxPayloadBytes = 4096;
+
+  final BleAdapter _adapter;
+  StreamSubscription<void>? _linkLossSub;
   Timer? _autoScanTimer;
   bool _isDisposed = false;
   bool _isSending = false;
+  bool _isReady = false;
 
   /// 現在の接続状態
+  @override
   BleStatus status = BleStatus.idle;
 
   /// ログ出力コールバック
@@ -107,8 +78,13 @@ class BleService {
   /// 状態変化コールバック
   final void Function(BleStatus status) onStatusChanged;
 
-  BleService({required this.onLog, required this.onStatusChanged});
+  BleService({
+    required this.onLog,
+    required this.onStatusChanged,
+    BleAdapter? adapter,
+  }) : _adapter = adapter ?? FlutterBluePlusAdapter();
 
+  @override
   void startAutoConnect() {
     if (_isDisposed || _autoScanTimer != null) {
       return;
@@ -125,6 +101,7 @@ class BleService {
     });
   }
 
+  @override
   void stopAutoConnect() {
     _autoScanTimer?.cancel();
     _autoScanTimer = null;
@@ -141,6 +118,7 @@ class BleService {
     onLog(msg);
   }
 
+  @override
   Future<void> scanAndConnect() async {
     if (_isDisposed ||
         status == BleStatus.scanning ||
@@ -148,9 +126,14 @@ class BleService {
       return;
     }
 
-    final adapterState = await FlutterBluePlus.adapterState.first;
-    if (adapterState != BluetoothAdapterState.on) {
-      _log('❌ スマホのBluetoothがOFFです。ONにしてください。');
+    try {
+      await _adapter.ensurePoweredOn();
+    } on BleAdapterException catch (e) {
+      if (e.failure == BleAdapterFailure.bluetoothOff) {
+        _log('❌ スマホのBluetoothがOFFです。ONにしてください。');
+      } else {
+        _log('❌ スキャンエラー: ${e.detail}');
+      }
       _setStatus(BleStatus.error);
       return;
     }
@@ -158,127 +141,86 @@ class BleService {
     _setStatus(BleStatus.scanning);
     _log('🔍 ターゲット BLE をスキャン中...');
 
+    late final BleFoundDevice? found;
     try {
-      final matchingResult = FlutterBluePlus.onScanResults
-          .expand((results) => results)
-          .where(_isTarget)
-          .first
-          .timeout(const Duration(seconds: 8));
-
-      await FlutterBluePlus.startScan(
-        withServices: [Guid(BleUuids.serviceUuid)],
-        timeout: const Duration(seconds: 8),
+      found = await _adapter.findTarget(
+        timeout: scanTimeout,
+        onAdvertisement: (name, remoteId) {
+          if (name.isNotEmpty) {
+            _log('  発見: "$name" ($remoteId)');
+          }
+        },
       );
-
-      final result = await matchingResult;
-      final name = _deviceName(result);
-      _log('🎯 ターゲット検出: $name (${result.device.remoteId})');
-      await FlutterBluePlus.stopScan();
-      await _connect(result.device);
-    } on TimeoutException {
+    } on BleAdapterException catch (e) {
+      _log('❌ スキャンエラー: ${e.detail}');
+      _setStatus(BleStatus.error);
+      return;
+    }
+    if (found == null) {
       _log('❌ MIRS-Robot が見つかりませんでした (タイムアウト)');
       _setStatus(BleStatus.idle);
-    } catch (e) {
-      _log('❌ スキャンエラー: $e');
-      _setStatus(BleStatus.error);
-    } finally {
-      if (FlutterBluePlus.isScanningNow) {
-        await FlutterBluePlus.stopScan();
-      }
+      return;
     }
+    _log('🎯 ターゲット検出: ${found.name} (${found.remoteId})');
+    await _connect(found);
   }
 
-  bool _isTarget(ScanResult result) {
-    final name = _deviceName(result);
-    final serviceUuids = result.advertisementData.serviceUuids
-        .map((uuid) => uuid.str128.toLowerCase())
-        .toSet();
-
-    final isUuidMatch = BleTargetMatcher.matchesServiceUuid(serviceUuids);
-
-    if (name.isNotEmpty) {
-      _log('  発見: "$name" (${result.device.remoteId})');
-    }
-
-    return isUuidMatch;
-  }
-
-  String _deviceName(ScanResult result) {
-    final advertisedName = result.advertisementData.advName;
-    final platformName = result.device.platformName;
-    return (advertisedName.isNotEmpty ? advertisedName : platformName).trim();
-  }
-
-  Future<void> _connect(BluetoothDevice device) async {
+  Future<void> _connect(BleFoundDevice found) async {
     if (_isDisposed || status == BleStatus.connected) {
       return;
     }
 
     _setStatus(BleStatus.connecting);
-    _log('🔗 接続中: ${device.platformName}');
+    _log('🔗 接続中: ${found.name}');
 
     try {
-      await device.connect(timeout: const Duration(seconds: 10));
-      _device = device;
-      _log('✅ 接続成功');
-
-      final services = await device.discoverServices();
-      final service = services
-          .where((svc) => svc.serviceUuid == Guid(BleUuids.serviceUuid))
-          .firstOrNull;
-      _missionChar = service?.characteristics
-          .where(
-            (char) => char.characteristicUuid == Guid(BleUuids.missionCharUuid),
-          )
-          .firstOrNull;
-      _responseChar = service?.characteristics
-          .where(
-            (char) =>
-                char.characteristicUuid == Guid(BleUuids.responseCharUuid),
-          )
-          .firstOrNull;
-
-      if (!BleConnectionRequirements.hasWritableMissionAndReadableResponse(
-        missionFound: _missionChar != null,
-        missionWritable: _missionChar?.properties.write ?? false,
-        responseFound: _responseChar != null,
-        responseReadable: _responseChar?.properties.read ?? false,
-      )) {
+      await _adapter.connect(found.remoteId, timeout: connectTimeout);
+    } on BleAdapterException catch (e) {
+      if (e.failure == BleAdapterFailure.requirementsUnmet) {
         _log('❌ Mission Characteristic が見つかりません。');
-        await device.disconnect();
-        _missionChar = null;
-        _responseChar = null;
-        _device = null;
-        _setStatus(BleStatus.error);
-        return;
+      } else {
+        _log('❌ 接続エラー: ${e.detail}');
       }
-      await _requestMtu(device);
-
-      _setStatus(BleStatus.connected);
-
-      await _connectionStateSub?.cancel();
-      _connectionStateSub = device.connectionState.listen((state) {
-        if (state == BluetoothConnectionState.disconnected) {
-          _log('🔌 切断されました');
-          _missionChar = null;
-          _device = null;
-          _setStatus(BleStatus.disconnected);
-          if (BleReconnectPolicy.shouldReconnect(
-            status: status,
-            disposed: _isDisposed,
-          )) {
-            Future.microtask(() => scanAndConnect());
-          }
-        }
-      });
-    } catch (e) {
-      _log('❌ 接続エラー: $e');
       _setStatus(BleStatus.error);
+      return;
+    }
+    _log('✅ 接続成功');
+
+    final mtu = await _adapter.negotiateMtu();
+    if (mtu.requested) {
+      _log('ℹ️ MTUを設定しました: ${mtu.mtu} bytes');
+    } else if (mtu.requestFailed) {
+      _log('⚠️ MTU設定に失敗したため、現在値を使用します: ${mtu.mtu} bytes');
+    } else {
+      _log('ℹ️ 現在のMTU: ${mtu.mtu} bytes');
+    }
+
+    _isReady = true;
+    _setStatus(BleStatus.connected);
+    _watchLinkLoss();
+  }
+
+  void _watchLinkLoss() {
+    _linkLossSub?.cancel();
+    _linkLossSub = _adapter.linkLoss.listen((_) => _handleLinkLoss());
+  }
+
+  void _handleLinkLoss() {
+    if (_isDisposed) return;
+    _isReady = false;
+    _log('🔌 切断されました');
+    _setStatus(BleStatus.disconnected);
+    if (BleReconnectPolicy.shouldReconnect(
+      status: status,
+      disposed: _isDisposed,
+    )) {
+      Future.microtask(() => scanAndConnect());
     }
   }
 
+  @override
   Future<bool> sendCleaningZone(CleaningZoneMission zone) async {
-    if (_missionChar == null) {
+    if (!_isReady) {
       _log('❌ 未接続です。先に接続してください。');
       return false;
     }
@@ -296,13 +238,15 @@ class BleService {
     try {
       final jsonStr = jsonEncode(zone.toJson());
       final bytes = utf8.encode('$jsonStr\n');
-      final mtuPayloadSize = _missionChar!.device.mtuNow - 3;
-      if (mtuPayloadSize <= 0) {
+      late final int payloadSize;
+      try {
+        payloadSize = await _adapter.currentPayloadSize();
+      } on BleAdapterException {
         _log('❌ BLEの送信可能サイズを取得できません。');
         _setStatus(BleStatus.error);
         return false;
       }
-      if (bytes.length > 4096) {
+      if (bytes.length > maxPayloadBytes) {
         _log('❌ 清掃範囲データが大きすぎます (${bytes.length} bytes)。');
         _setStatus(BleStatus.connected);
         return false;
@@ -310,12 +254,25 @@ class BleService {
       _log('📤 送信中 (${bytes.length} bytes)...');
       _log('   $jsonStr');
 
-      for (final chunk in BlePayloadChunker.split(bytes, mtuPayloadSize)) {
-        await _missionChar!.write(chunk, withoutResponse: false);
+      try {
+        await _adapter.writeChunks(
+          BlePayloadChunker.split(bytes, payloadSize),
+        );
+      } on BleAdapterException catch (e) {
+        _log('❌ 送信エラー: ${e.detail}');
+        _isReady = false;
+        _setStatus(BleStatus.error);
+        return false;
       }
-      final response = await _responseChar!.read().timeout(
-        const Duration(seconds: 5),
-      );
+      late final List<int> response;
+      try {
+        response = await _adapter.readResponse(timeout: responseTimeout);
+      } on BleAdapterException catch (e) {
+        _log('❌ 送信エラー: ${e.detail}');
+        _isReady = false;
+        _setStatus(BleStatus.error);
+        return false;
+      }
       if (!BleResponse.isAccepted(response)) {
         final responseText = utf8.decode(response, allowMalformed: true);
         _log('❌ ロボット側でミッションが拒否されました: $responseText');
@@ -334,37 +291,27 @@ class BleService {
     }
   }
 
-  Future<void> _requestMtu(BluetoothDevice device) async {
-    if (!Platform.isAndroid) {
-      _log('ℹ️ 現在のMTU: ${device.mtuNow} bytes');
-      return;
-    }
-
-    try {
-      final mtu = await device.requestMtu(247);
-      _log('ℹ️ MTUを設定しました: $mtu bytes');
-    } catch (e) {
-      _log('⚠️ MTU設定に失敗したため、現在値を使用します: ${device.mtuNow} bytes');
-    }
-  }
-
   Future<void> disconnect() async {
-    await _connectionStateSub?.cancel();
-    _connectionStateSub = null;
-    await _device?.disconnect();
-    _missionChar = null;
-    _responseChar = null;
-    _device = null;
+    await _linkLossSub?.cancel();
+    _linkLossSub = null;
+    _isReady = false;
     _isSending = false;
+    try {
+      await _adapter.disconnect();
+    } catch (_) {}
     if (!_isDisposed) {
       _setStatus(BleStatus.idle);
     }
     _log('🔌 切断しました');
   }
 
+  @override
   Future<void> dispose() async {
     _isDisposed = true;
     stopAutoConnect();
     await disconnect();
+    try {
+      await _adapter.dispose();
+    } catch (_) {}
   }
 }

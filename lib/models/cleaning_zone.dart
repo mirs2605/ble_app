@@ -31,6 +31,7 @@ class MapPoint {
 class CleaningZoneMission {
   static const double maxCoordinateAbs = 1000.0;
   static const double minArea = 0.0001;
+  static const int minPoints = 3;
 
   final String type;
   final String frameId;
@@ -53,7 +54,7 @@ class CleaningZoneMission {
   bool get isValid {
     if (!(type.isNotEmpty &&
         frameId.isNotEmpty &&
-        polygon.length >= 3 &&
+        polygon.length >= minPoints &&
         polygon.every(
           (p) =>
               p.x.isFinite &&

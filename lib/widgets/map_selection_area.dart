@@ -1,23 +1,31 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' as vm;
 
 import '../models/cleaning_zone.dart';
 import '../models/map_geometry.dart';
 import '../services/map_selection_controller.dart';
+import '../theme/app_colors.dart';
 
 class MapSelectionArea extends StatefulWidget {
-  final List<MapPoint> points;
+  /// 選択状態の所有者は親（BleHomeController）。
+  /// このWidgetはジェスチャーで直接操作し、確定時に [onChanged] で通知する。
+  /// 値のミラーは持たない（Single Source of Truth）。
+  final MapSelectionController controller;
   final ValueChanged<List<MapPoint>> onChanged;
   final ValueChanged<String>? onLog;
   final bool sendCompleted;
 
+  /// フリーハンド描画中か否かの報告。通知バーの囲み促進ヒントの
+  /// 表示条件（未選択かつ描画中でない）の後半に使う。
+  final ValueChanged<bool>? onSelectionIdleChanged;
+
   const MapSelectionArea({
     super.key,
-    required this.points,
+    required this.controller,
     required this.onChanged,
     this.onLog,
     this.sendCompleted = false,
+    this.onSelectionIdleChanged,
   });
 
   @override
@@ -25,7 +33,7 @@ class MapSelectionArea extends StatefulWidget {
 }
 
 class _MapSelectionAreaState extends State<MapSelectionArea> {
-  final MapSelectionController _selectionController = MapSelectionController();
+  MapSelectionController get _selectionController => widget.controller;
   final TransformationController _mapTransformController =
       TransformationController();
   Offset? _lastFocalPoint;
@@ -37,15 +45,8 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
   @override
   void initState() {
     super.initState();
-    _selectionController.points = List<MapPoint>.from(widget.points);
-  }
-
-  @override
-  void didUpdateWidget(covariant MapSelectionArea oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!listEquals(oldWidget.points, widget.points)) {
-      _selectionController.points = List<MapPoint>.from(widget.points);
-    }
+    // 初期状態（未選択・非描画）を親に伝える。build中の通知を避け次フレームで。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reportIdle());
   }
 
   @override
@@ -53,6 +54,9 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
     _mapTransformController.dispose();
     super.dispose();
   }
+
+  void _reportIdle() =>
+      widget.onSelectionIdleChanged?.call(_freehandPath.isEmpty);
 
   void _emitSelection() {
     widget.onChanged(List<MapPoint>.from(_selectionController.points));
@@ -117,6 +121,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                   ..add(local);
               });
             }
+            _reportIdle();
           },
           onScaleUpdate: (details) {
             final previousFocal = _lastFocalPoint ?? details.localFocalPoint;
@@ -170,6 +175,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
             if (_selectionController.selectionStart != null &&
                 _selectionController.points.length < 4) {
               setState(() => _freehandPath.add(local));
+              _reportIdle();
             }
           },
           onScaleEnd: (_) {
@@ -198,6 +204,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
             if (!wasTransforming && wasDrawing) {
               _emitSelection();
             }
+            _reportIdle();
           },
           child: RepaintBoundary(
             child: Stack(
@@ -247,17 +254,6 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                     ),
                   ),
                 ),
-                if (_selectionController.points.isEmpty &&
-                    _freehandPath.isEmpty)
-                  const Align(
-                    alignment: Alignment.bottomCenter,
-                    child: IgnorePointer(
-                      child: Padding(
-                        padding: EdgeInsets.only(bottom: 16),
-                        child: Text('範囲を囲ってください'),
-                      ),
-                    ),
-                  ),
                 if (_selectionController.activeHandleIndex != null &&
                     _magnifierPosition != null)
                   _MapMagnifier(
@@ -309,7 +305,7 @@ class _MapMagnifier extends StatelessWidget {
           decoration: MagnifierDecoration(
             opacity: 1,
             shape: CircleBorder(
-              side: BorderSide(color: Colors.white, width: 3),
+              side: BorderSide(color: AppColors.onColor, width: 3),
             ),
             shadows: [BoxShadow(color: Colors.black54, blurRadius: 6)],
           ),
@@ -342,7 +338,7 @@ class _MapSelectionPainter extends CustomPainter {
       canvas.drawPath(
         path,
         Paint()
-          ..color = Colors.green.withValues(alpha: 0.9)
+          ..color = AppColors.selection.withValues(alpha: 0.9)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 3
           ..strokeCap = StrokeCap.round
@@ -366,7 +362,7 @@ class _MapSelectionPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = sendCompleted ? Colors.blue : Colors.green
+        ..color = sendCompleted ? AppColors.completed : AppColors.selection
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3
         ..strokeCap = StrokeCap.round
@@ -381,10 +377,10 @@ class _MapSelectionPainter extends CustomPainter {
         radius,
         Paint()
           ..color = i == activeHandle
-              ? Colors.red
+              ? AppColors.danger
               : sendCompleted
-              ? Colors.blue
-              : Colors.green,
+              ? AppColors.completed
+              : AppColors.selection,
       );
     }
   }

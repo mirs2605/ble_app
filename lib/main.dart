@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'controllers/ble_home_controller.dart';
+import 'theme/app_colors.dart';
 import 'widgets/ble_tabs.dart';
 import 'widgets/icon_tab_navigation.dart';
 
@@ -17,7 +18,7 @@ class MirsBleApp extends StatelessWidget {
       title: 'MIRS BLE',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: AppColors.action,
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
@@ -60,29 +61,28 @@ class _BleHomePageState extends State<BleHomePage> {
             index: _controller.selectedTabIndex,
             children: [
               BleValuesTab(
-                xControllers: _controller.xControllers,
-                yControllers: _controller.yControllers,
                 status: _controller.status,
                 statusAnnouncement: _controller.statusAnnouncement,
-                announcementIcon: _controller.announcementIcon,
-                onSend: _controller.sendPressed,
+                notice: _controller.activeNotice,
+                selectedMapPoints: _controller.selectedMapPoints,
+                onSendPolygon: _controller.sendPolygon,
+                canSendPolygon: _controller.canSendPolygon,
                 onStatusPressed: _controller.showStatusAnnouncement,
-                sendCompleted: _controller.sendCompleted,
                 sendButtonState: _controller.sendButtonState,
               ),
               BleHomeTab(
-                selectedMapPoints: _controller.selectedMapPoints,
+                mapSelection: _controller.mapSelection,
                 status: _controller.status,
                 statusAnnouncement: _controller.statusAnnouncement,
-                announcementIcon: _controller.announcementIcon,
+                notice: _controller.activeNotice,
                 permissionsPermanentlyDenied:
                     _controller.permissionsPermanentlyDenied,
                 onMapChanged: _controller.setSelectedMapPoints,
+                onSelectionIdleChanged: _controller.setSelectionIdle,
                 onLog: _controller.addLog,
                 onPermissionSettings: _controller.openPermissionSettings,
                 onClearSelection: _controller.clearSelection,
-                onSend: _controller.sendPressed,
-                onStatusPressed: _controller.showStatusAnnouncement,
+                onSend: _controller.sendPressed,                onStatusPressed: _controller.showStatusAnnouncement,
                 sendCompleted: _controller.sendCompleted,
                 sendButtonState: _controller.sendButtonState,
                 canSend: _controller.canSendSelectedMap,
@@ -91,11 +91,8 @@ class _BleHomePageState extends State<BleHomePage> {
                 logs: _controller.logs,
                 status: _controller.status,
                 statusAnnouncement: _controller.statusAnnouncement,
-                announcementIcon: _controller.announcementIcon,
-                onSend: _controller.sendPressed,
+                notice: _controller.activeNotice,
                 onStatusPressed: _controller.showStatusAnnouncement,
-                sendCompleted: _controller.sendCompleted,
-                sendButtonState: _controller.sendButtonState,
               ),
             ],
           ),

@@ -8,7 +8,7 @@ class MapSelectionController {
   Offset? selectionStart;
   int? activeHandleIndex;
 
-  bool get hasSelection => points.length == 4;
+  bool get hasSelection => points.length >= CleaningZoneMission.minPoints;
 
   void clear() {
     points = <MapPoint>[];

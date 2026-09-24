@@ -1,86 +1,122 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 
+import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
 import '../models/send_button_state.dart';
+import '../services/ble_connection.dart';
 import '../services/ble_service.dart';
-import '../services/permission_service.dart';
+import '../services/map_selection_controller.dart';
+import '../services/permission_gateway.dart';
+import '../theme/app_strings.dart';
+import 'notice_board.dart';
+import 'send_mission_tracker.dart';
 
+/// 画面の協調役（facade）。BLE接続・権限・送信進行・時限表示の
+/// 詳細は [BleConnection] / [PermissionGateway] / [SendMissionTracker] /
+/// [NoticeBoard] に委ね、このクラスは配線と公開状態に徹する。
 class BleHomeController extends ChangeNotifier {
-  late final BleService bleService;
-
-  BleStatus _status = BleStatus.idle;
-  bool _permissionsPermanentlyDenied = false;
-  String? _statusAnnouncement;
-  IconData? _announcementIcon;
-  Timer? _announcementTimer;
-  String? _sendAnnouncement;
-  Timer? _sendAnnouncementTimer;
-  bool _sendCompleted = false;
-  final List<String> _logs = [];
-  final List<TextEditingController> xControllers = List.generate(
-    4,
-    (_) => TextEditingController(),
-  );
-  final List<TextEditingController> yControllers = List.generate(
-    4,
-    (_) => TextEditingController(),
-  );
-  List<MapPoint> _selectedMapPoints = [];
-  List<MapPoint>? _lastSentMapPoints;
-  int selectedTabIndex = 1;
-  bool _isDisposed = false;
-
-  BleHomeController() {
-    bleService = BleService(
-      onLog: _addServiceLog,
-      onStatusChanged: _handleStatusChanged,
-    );
-    _setDefaultValues();
+  BleHomeController({
+    BleConnectionFactory? connectionFactory,
+    PermissionGateway? permissionGateway,
+  }) : _permissions = permissionGateway ?? const DefaultPermissionGateway() {
+    _connection =
+        (connectionFactory ?? BleService.new)(
+          onLog: _addServiceLog,
+          onStatusChanged: _handleStatusChanged,
+        );
+    _statusBoard = NoticeBoard<String>(onChanged: _guardedNotify);
+    _noticeBoard = NoticeBoard<AppNotice>(onChanged: _guardedNotify);
     unawaited(_startAutoConnect());
   }
 
+  late final BleConnection _connection;
+  final PermissionGateway _permissions;
+
+  BleStatus _status = BleStatus.idle;
+  bool _permissionsPermanentlyDenied = false;
+  late final NoticeBoard<String> _statusBoard;
+  late final NoticeBoard<AppNotice> _noticeBoard;
+  final SendMissionTracker _sendTracker = SendMissionTracker();
+
+  /// 地図選択の唯一の所有者。MapSelectionAreaはこのインスタンスを
+  /// 直接操作し、確定時にonChangedで通知する（値のミラーは持たない）。
+  final MapSelectionController mapSelection = MapSelectionController();
+
+  /// フリーハンド描画中でないこと。MapSelectionAreaが報告する。
+  /// ヒント表示条件（未選択かつ描画中でない）の後半を担う。
+  bool _selectionIdle = true;
+  final List<String> _logs = [];
+  int selectedTabIndex = 1;
+  bool _isDisposed = false;
+  bool _autoConnectStarted = false;
+
   BleStatus get status => _status;
   bool get permissionsPermanentlyDenied => _permissionsPermanentlyDenied;
-  String? get statusAnnouncement => _statusAnnouncement;
-  IconData? get announcementIcon => _announcementIcon;
-  String? get sendAnnouncement => _sendAnnouncement;
-  bool get sendCompleted => _sendCompleted;
-  SendButtonState get sendButtonState {
-    if (_sendCompleted) return SendButtonState.completed;
-    if (_sendAnnouncement == '送信中') return SendButtonState.sending;
-    return SendButtonState.ready;
-  }
+  String? get statusAnnouncement => _statusBoard.value;
+
+  /// 表示中の独立通知。一時通知（3秒）を優先し、なければ囲み促進ヒント。
+  /// ヒント条件は従来の画面下表示と同一：未選択かつ描画中でないこと。
+  AppNotice? get activeNotice =>
+      _noticeBoard.value ??
+      (_selectionIdle && mapSelection.points.isEmpty
+          ? AppNotice.encloseRange
+          : null);
+
+  bool get sendCompleted => _sendTracker.sendCompleted;
+  SendButtonState get sendButtonState => _sendTracker.buttonState;
   List<String> get logs => List.unmodifiable(_logs);
-  List<MapPoint> get selectedMapPoints => List.unmodifiable(_selectedMapPoints);
-  bool get canSendSelectedMap =>
-      _status == BleStatus.connected &&
-      _selectedMapPoints.length >= 4 &&
-      !_samePoints(_selectedMapPoints, _lastSentMapPoints);
+  List<MapPoint> get selectedMapPoints =>
+      List<MapPoint>.unmodifiable(mapSelection.points);
+  bool get canSendSelectedMap => canSendPolygon(mapSelection.points);
+
+  void _guardedNotify() {
+    if (!_isDisposed) notifyListeners();
+  }
 
   void selectTab(int index) {
+    if (_isDisposed) return;
     selectedTabIndex = index;
-    notifyListeners();
+    _guardedNotify();
   }
 
   void setSelectedMapPoints(List<MapPoint> points) {
-    _selectedMapPoints = List<MapPoint>.from(points);
-    _sendCompleted = false;
-    _clearSendAnnouncement();
-    _syncFormFromSelection();
+    mapSelection.points = List<MapPoint>.from(points);
+    _sendTracker.resetProgress();
     notifyListeners();
   }
 
   void clearSelection() {
-    _selectedMapPoints = [];
-    _sendCompleted = false;
-    _clearSendAnnouncement();
+    mapSelection.clear();
+    _sendTracker.resetProgress();
+    notifyListeners();
+  }
+
+  /// MapSelectionAreaからの描画状態報告を受け取る。
+  void setSelectionIdle(bool idle) {
+    if (_isDisposed || _selectionIdle == idle) return;
+    _selectionIdle = idle;
     notifyListeners();
   }
 
   void showStatusAnnouncement() {
-    _showAnnouncement(_statusLabel(_status), null);
+    _statusBoard.show(AppStrings.bleStatusLabel(_status));
+  }
+
+  /// Bluetoothステータスとは無関係な独立通知を表示する。
+  /// 文言・アイコン・色は [AppNotice] からテーマ層が解決する。
+  /// [duration] 経過後に上端へスライドして自動で非表示になる。
+  void notifyNotice(
+    AppNotice notice, {
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    if (_isDisposed) return;
+    _noticeBoard.show(notice, duration: duration);
+  }
+
+  void clearNotification() {
+    _noticeBoard.clear();
   }
 
   void addLog(String message) {
@@ -88,77 +124,71 @@ class BleHomeController extends ChangeNotifier {
     _addLog(message);
   }
 
-  Future<void> sendPressed() async {
-    final polygon = _selectedMapPoints.isNotEmpty
-        ? List<MapPoint>.from(_selectedMapPoints)
-        : _readFormPolygon();
+  /// 地図タブ用。選択中の範囲を送信する。
+  Future<void> sendPressed() =>
+      sendPolygon(List<MapPoint>.from(mapSelection.points));
 
+  /// 任意の多角形を送信する。数値タブはフォーム値をパースして渡す。
+  /// 空・不正な入力は送信せず、対応する通知を出す。
+  Future<void> sendPolygon(List<MapPoint> polygon) async {
     if (polygon.isEmpty) {
-      addLog('❌ 範囲を指定してください');
+      addLog('❌ ${AppStrings.specifyRange}');
+      notifyNotice(AppNotice.specifyRange);
       return;
     }
 
     final zone = CleaningZoneMission(polygon: polygon);
     if (!zone.isValid) {
-      addLog('❌ 清掃範囲が不正です');
+      addLog('❌ ${AppStrings.invalidRange}');
+      notifyNotice(AppNotice.invalidRange);
       return;
     }
 
-    _showSendAnnouncement('送信中');
-    _sendCompleted = false;
-    final sent = await bleService.sendCleaningZone(zone);
-    if (sent && !_isDisposed) {
-      _lastSentMapPoints = List<MapPoint>.from(polygon);
-      _sendCompleted = true;
-      _showSendAnnouncement('送信完了');
-    } else if (!_isDisposed) {
-      _clearSendAnnouncement();
+    _sendTracker.beginSend();
+    notifyListeners();
+    final sent = await _connection.sendCleaningZone(zone);
+    if (_isDisposed) return;
+    if (sent) {
+      _sendTracker.succeed(List<MapPoint>.from(polygon));
+      // 送信完了の文言表示は通知バーに任せる。
+      notifyNotice(AppNotice.sendDone);
+    } else {
+      _sendTracker.failSend();
+      notifyNotice(AppNotice.sendFailed);
     }
-
+    notifyListeners();
   }
 
-  bool _samePoints(List<MapPoint> points, List<MapPoint>? other) {
-    if (other == null || points.length != other.length) return false;
-    for (var i = 0; i < points.length; i++) {
-      if (points[i] != other[i]) return false;
-    }
-    return true;
-  }
+  /// 送信ボタン活性条件。数値タブはフォーム値で判定する。
+  bool canSendPolygon(List<MapPoint> polygon) =>
+      _status == BleStatus.connected && _sendTracker.canSend(polygon);
 
   Future<void> openPermissionSettings() async {
-    final opened = await PermissionService.openSettings();
+    final opened = await _permissions.openSettings();
     if (!opened) {
-      addLog('❌ アプリ設定を開けませんでした');
-    }
-  }
-
-  void _setDefaultValues() {
-    final defaults = [
-      [1.0, 1.0],
-      [4.0, 1.0],
-      [4.0, 3.0],
-      [1.0, 3.0],
-    ];
-    for (int i = 0; i < 4; i++) {
-      xControllers[i].text = defaults[i][0].toString();
-      yControllers[i].text = defaults[i][1].toString();
+      addLog('❌ ${AppStrings.settingsOpenFailed}');
+      notifyNotice(AppNotice.settingsOpenFailed);
     }
   }
 
   Future<void> _startAutoConnect() async {
+    if (_autoConnectStarted || _isDisposed) return;
+    _autoConnectStarted = true;
     if (!await _requestPermissions() || _isDisposed) return;
-    bleService.startAutoConnect();
-    addLog('📡 BLE サーバーに近づくと自動で接続します');
-    unawaited(bleService.scanAndConnect());
+    _connection.startAutoConnect();
+    addLog(AppStrings.autoConnectGuide);
+    notifyNotice(AppNotice.autoConnectStarted);
+    unawaited(_connection.scanAndConnect());
   }
 
   Future<bool> _requestPermissions() async {
-    final result = await PermissionService.requestBlePermissions();
+    final result = await _permissions.requestBlePermissions();
     if (_isDisposed) return false;
     _permissionsPermanentlyDenied = result.permanentlyDenied;
     notifyListeners();
     if (!result.isGranted) {
-      addLog('❌ パーミッション不足: ${result.deniedNames.join(', ')}');
+      addLog(AppStrings.permissionMissingDetails(result.deniedNames));
+      notifyNotice(AppNotice.permissionMissing);
       return false;
     }
     return true;
@@ -166,77 +196,27 @@ class BleHomeController extends ChangeNotifier {
 
   void _handleStatusChanged(BleStatus status) {
     if (_isDisposed) return;
-    _announcementTimer?.cancel();
-    _status = status;
+    // 送信中はBTアイコンを反応させない。送信表示は送信ボタンと
+    // 独立通知バー側に任せ、接続表示は維持する。
+    // BLE層内部の status は sending になるため自動再スキャン抑止は効く。
     if (status == BleStatus.sending) {
-      _showSendAnnouncement('送信中');
-    }
-    _statusAnnouncement = status == BleStatus.sending
-        ? null
-        : _statusLabel(status);
-    _announcementIcon = null;
-    notifyListeners();
-    _announcementTimer = Timer(const Duration(seconds: 3), () {
-      if (_isDisposed) return;
-      _statusAnnouncement = null;
+      _status = status;
+      _sendTracker.markSending();
       notifyListeners();
-    });
-  }
-
-  void _showAnnouncement(String message, IconData? icon) {
-    _announcementTimer?.cancel();
-    _statusAnnouncement = message;
-    _announcementIcon = icon;
-    notifyListeners();
-    _announcementTimer = Timer(const Duration(seconds: 3), () {
-      if (_isDisposed) return;
-      _statusAnnouncement = null;
-      _announcementIcon = null;
-      notifyListeners();
-    });
-  }
-
-  void _showSendAnnouncement(String message) {
-    _sendAnnouncementTimer?.cancel();
-    _sendAnnouncement = message;
-    notifyListeners();
-    if (message == '送信完了') return;
-    _sendAnnouncementTimer = Timer(const Duration(seconds: 3), () {
-      if (_isDisposed) return;
-      _sendAnnouncement = null;
-      notifyListeners();
-    });
-  }
-
-  void _clearSendAnnouncement() {
-    _sendAnnouncementTimer?.cancel();
-    _sendAnnouncement = null;
-    notifyListeners();
-  }
-
-  List<MapPoint> _readFormPolygon() {
-    final polygon = <MapPoint>[];
-    for (int i = 0; i < 4; i++) {
-      final x = double.tryParse(xControllers[i].text);
-      final y = double.tryParse(yControllers[i].text);
-      if (x == null || y == null) {
-        return <MapPoint>[];
-      }
-      polygon.add(MapPoint(x: x, y: y));
+      return;
     }
-    return polygon;
-  }
-
-  void _syncFormFromSelection() {
-    if (_selectedMapPoints.length != 4) return;
-    for (int i = 0; i < 4; i++) {
-      xControllers[i].text = _selectedMapPoints[i].x.toStringAsFixed(2);
-      yControllers[i].text = _selectedMapPoints[i].y.toStringAsFixed(2);
+    _sendTracker.isSending = false;
+    // 送信成功後の connected -> connected など、状態が変わっていない場合は
+    // 「接続済み」を再表示しない（送信のたびにアイコンが膨らむのを防ぐ）。
+    if (status == _status) {
+      notifyListeners();
+      return;
     }
+    _status = status;
+    _statusBoard.show(AppStrings.bleStatusLabel(status));
   }
 
-  void _addServiceLog(String message) {
-    if (_isDisposed) return;
+  void _addServiceLog(String message) {    if (_isDisposed) return;
     _addLog(message, trim: true);
   }
 
@@ -254,29 +234,13 @@ class BleHomeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _statusLabel(BleStatus status) => switch (status) {
-    BleStatus.idle => '未接続',
-    BleStatus.scanning => '検索中',
-    BleStatus.connecting => '接続中',
-    BleStatus.connected => '接続済み',
-    BleStatus.sending => '接続済み',
-    BleStatus.disconnected => '切断',
-    BleStatus.error => 'エラー',
-  };
-
   @override
   void dispose() {
     _isDisposed = true;
-    bleService.stopAutoConnect();
-    unawaited(bleService.dispose());
-    _announcementTimer?.cancel();
-    _sendAnnouncementTimer?.cancel();
-    for (final controller in xControllers) {
-      controller.dispose();
-    }
-    for (final controller in yControllers) {
-      controller.dispose();
-    }
+    _connection.stopAutoConnect();
+    unawaited(_connection.dispose());
+    _statusBoard.dispose();
+    _noticeBoard.dispose();
     super.dispose();
   }
 }
