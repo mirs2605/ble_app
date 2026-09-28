@@ -8,6 +8,11 @@ MIRS ロボットへ BLE 経由で清掃範囲ミッションを送信する Flu
 - `lib/ble_service.dart`: BLE スキャン・接続・Characteristic 検出・送信・切断
 - `lib/main.dart`: 権限要求と画面表示。通信や JSON の詳細はサービス・モデルに依存
 
+## 開発資料
+
+- [残件バックログ](docs/backlog.md)
+- [構成レビューと修正記録](docs/reviews/configuration-review.md)
+
 ## 実行と検証
 
 ```sh

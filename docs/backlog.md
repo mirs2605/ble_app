@@ -83,8 +83,8 @@ P0（Controller分割・Adapter分離・SSOT化・フォーム移管）は完了
   未コミットで混在している。切り分けが効かなくなる前にコミットすること。
 - 推奨粒度: (a) 着手前差分 (b) P0-1 (c) P0-2 (d) P0-3＋P0-4 (e) 通知バー・文言・アイコン補正
 
-### 10. `CONFIGURATION_REVIEW.md` との役割分担
-- BLE契約・署名・権限などの指摘は `CONFIGURATION_REVIEW.md` が有効。本書はアプリ層構造のみ扱う。
+### 10. [構成レビュー](reviews/configuration-review.md)との役割分担
+- BLE契約・署名・権限などの指摘は[構成レビュー](reviews/configuration-review.md)が有効。本書はアプリ層構造のみ扱う。
 - 両方に手を付ける場合は、BLE契約側（実機確認が必要）とアプリ層（単体テスト可）を別スプリントに分けること。
 
 ---
