@@ -67,6 +67,8 @@ class _BleHomePageState extends State<BleHomePage> {
                 selectedMapPoints: _controller.selectedMapPoints,
                 onSendPolygon: _controller.sendPolygon,
                 canSendPolygon: _controller.canSendPolygon,
+                onSendInitialPose: _controller.sendInitialPose,
+                canSendInitialPose: _controller.canSendInitialPose,
                 onStatusPressed: _controller.showStatusAnnouncement,
                 sendButtonState: _controller.sendButtonState,
               ),

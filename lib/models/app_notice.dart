@@ -12,4 +12,5 @@ enum AppNotice {
   permissionMissing,
   settingsOpenFailed,
   encloseRange,
+  invalidInitialPose,
 }

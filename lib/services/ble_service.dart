@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../models/cleaning_zone.dart';
+import '../models/initial_pose.dart';
 import 'ble_adapter.dart';
 import 'ble_connection.dart';
 import 'flutter_blue_plus_adapter.dart';
@@ -220,23 +221,42 @@ class BleService implements BleConnection {
 
   @override
   Future<bool> sendCleaningZone(CleaningZoneMission zone) async {
+    if (!zone.isValid) {
+      _log('❌ 清掃範囲が不正です。');
+      return false;
+    }
+    return _sendJson(zone.toJson(), label: '清掃範囲');
+  }
+
+  @override
+  Future<bool> sendInitialPose(InitialPoseMission pose) async {
+    if (!pose.isValid) {
+      _log('❌ 開始地点が不正です。');
+      return false;
+    }
+    return _sendJson(pose.toJson(), label: '開始地点');
+  }
+
+  /// JSON化可能なオブジェクトを改行区切りでBLE送信する共通実装。
+  ///
+  /// 接続チェック・チャンク分割・ACK確認を担い、上位メソッドはバリデーションのみ。
+  Future<bool> _sendJson(
+    Map<String, dynamic> json, {
+    required String label,
+  }) async {
     if (!_isReady) {
       _log('❌ 未接続です。先に接続してください。');
       return false;
     }
     if (_isSending) {
-      _log('⚠️ 送信中です。完了するまで次のミッションは送信できません。');
-      return false;
-    }
-    if (!zone.isValid) {
-      _log('❌ 清掃範囲が不正です。');
+      _log('⚠️ 送信中です。完了するまで次の送信はできません。');
       return false;
     }
 
     _isSending = true;
     _setStatus(BleStatus.sending);
     try {
-      final jsonStr = jsonEncode(zone.toJson());
+      final jsonStr = jsonEncode(json);
       final bytes = utf8.encode('$jsonStr\n');
       late final int payloadSize;
       try {
@@ -247,11 +267,11 @@ class BleService implements BleConnection {
         return false;
       }
       if (bytes.length > maxPayloadBytes) {
-        _log('❌ 清掃範囲データが大きすぎます (${bytes.length} bytes)。');
+        _log('❌ $labelデータが大きすぎます (${bytes.length} bytes)。');
         _setStatus(BleStatus.connected);
         return false;
       }
-      _log('📤 送信中 (${bytes.length} bytes)...');
+      _log('📤 $label送信中 (${bytes.length} bytes)...');
       _log('   $jsonStr');
 
       try {
@@ -275,11 +295,11 @@ class BleService implements BleConnection {
       }
       if (!BleResponse.isAccepted(response)) {
         final responseText = utf8.decode(response, allowMalformed: true);
-        _log('❌ ロボット側でミッションが拒否されました: $responseText');
+        _log('❌ ロボット側で$labelが拒否されました: $responseText');
         _setStatus(BleStatus.error);
         return false;
       }
-      _log('✅ 送信完了');
+      _log('✅ $label送信完了');
       _setStatus(BleStatus.connected);
       return true;
     } catch (e) {

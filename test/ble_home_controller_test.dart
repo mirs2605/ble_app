@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mirs_ble_app/controllers/ble_home_controller.dart';
 import 'package:mirs_ble_app/models/app_notice.dart';
 import 'package:mirs_ble_app/models/cleaning_zone.dart';
+import 'package:mirs_ble_app/models/initial_pose.dart';
 import 'package:mirs_ble_app/models/send_button_state.dart';
 import 'package:mirs_ble_app/services/ble_connection.dart';
 import 'package:mirs_ble_app/services/permission_gateway.dart';
@@ -20,6 +21,7 @@ class FakeBleConnection implements BleConnection {
   int startAutoCalls = 0;
   int scanCalls = 0;
   int sendCalls = 0;
+  int sendPoseCalls = 0;
   int disposeCalls = 0;
   bool sendResult = true;
 
@@ -37,6 +39,12 @@ class FakeBleConnection implements BleConnection {
   @override
   Future<bool> sendCleaningZone(CleaningZoneMission zone) async {
     sendCalls++;
+    return sendResult;
+  }
+
+  @override
+  Future<bool> sendInitialPose(InitialPoseMission pose) async {
+    sendPoseCalls++;
     return sendResult;
   }
 

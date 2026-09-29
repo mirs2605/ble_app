@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
+import '../models/initial_pose.dart';
 import '../models/send_button_state.dart';
 import '../services/ble_connection.dart';
 import '../services/ble_service.dart';
@@ -162,6 +163,35 @@ class BleHomeController extends ChangeNotifier {
   /// 送信ボタン活性条件。数値タブはフォーム値で判定する。
   bool canSendPolygon(List<MapPoint> polygon) =>
       _status == BleStatus.connected && _sendTracker.canSend(polygon);
+
+  /// 開始地点を送信する。不正な値は送信せず通知を出す。
+  Future<void> sendInitialPose(InitialPoseMission pose) async {
+    if (!pose.isValid) {
+      addLog('❌ ${AppStrings.invalidInitialPose}');
+      notifyNotice(AppNotice.invalidInitialPose);
+      return;
+    }
+
+    _sendTracker.beginSend();
+    notifyListeners();
+    final sent = await _connection.sendInitialPose(pose);
+    if (_isDisposed) return;
+    if (sent) {
+      _sendTracker.succeed([]);
+      notifyNotice(AppNotice.sendDone);
+    } else {
+      _sendTracker.failSend();
+      notifyNotice(AppNotice.sendFailed);
+    }
+    notifyListeners();
+  }
+
+  /// 開始地点の送信ボタン活性条件。
+  bool canSendInitialPose(InitialPoseMission? pose) =>
+      _status == BleStatus.connected &&
+      !_sendTracker.isSending &&
+      pose != null &&
+      pose.isValid;
 
   Future<void> openPermissionSettings() async {
     final opened = await _permissions.openSettings();

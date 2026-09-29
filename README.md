@@ -5,7 +5,7 @@ MIRS ロボットへ BLE 経由で清掃範囲ミッションを送信する Flu
 ## 構成
 
 - `lib/models/cleaning_zone.dart`: 座標と清掃範囲ミッションのモデル、JSON 化、入力検証
-- `lib/ble_service.dart`: BLE スキャン・接続・Characteristic 検出・送信・切断
+- `lib/services/ble_service.dart`: BLE スキャン・接続・Characteristic 検出・送信・切断
 - `lib/main.dart`: 権限要求と画面表示。通信や JSON の詳細はサービス・モデルに依存
 
 ## 開発資料
