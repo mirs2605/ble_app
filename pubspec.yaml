@@ -65,7 +65,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/maps/rouka7.png
+    - assets/maps/mirs_map.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

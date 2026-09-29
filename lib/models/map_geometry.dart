@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import 'cleaning_zone.dart';
 
 class MapGeometry {
-  static const double resolution = 0.1;
-  static const double originX = -25.8;
-  static const double originY = -73.9;
-  static const double imageWidth = 561.0;
-  static const double imageHeight = 775.0;
+  static const double resolution = 0.05;
+  static const double originX = -3.238;
+  static const double originY = -4.542;
+  static const double imageWidth = 303.0;
+  static const double imageHeight = 225.0;
   static const double widthMeters = imageWidth * resolution;
   static const double heightMeters = imageHeight * resolution;
   static const double imageAspectRatio = imageWidth / imageHeight;

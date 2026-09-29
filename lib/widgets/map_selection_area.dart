@@ -229,7 +229,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                               children: [
                                 Positioned.fill(
                                   child: Image.asset(
-                                    'assets/maps/rouka7.png',
+                                    'assets/maps/mirs_map.png',
                                     fit: BoxFit.fill,
                                   ),
                                 ),
