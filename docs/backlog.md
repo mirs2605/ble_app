@@ -81,12 +81,13 @@ P0（Controller分割・Adapter分離・SSOT化・フォーム移管）は完了
 
 BLE契約（type文字列・GATT構成）は server・coverage と同時改訂が必要。全体像は `ws/TODO.md` §5。
 
-### 11. 現在位置・向きの入力と送信 [高/M]
+### 11. 現在位置・向きの入力と送信 [高/M]（送信開通 2026-10-01）
 - 入力フォーム（x, y, theta）とモデル追加（案: `type: 'initial_pose'`＋`frame_id`＋pose のJSON）。
   - 制約は `CleaningZoneMission` と同一流儀（座標±1000、`frame_id='map'`）。
 - 送信経路は `BleConnection.sendCleaningZone` と同流儀で新API追加。
   - 注意: 送信結果の型置換（#6）より先に着手する場合は `bool`＋ログの現行形式に合わせる。
 - テスト: JSON契約テスト（server側の受信実装とtype文字列の一致が前提）。
+- 実機でUI送信→RViz反映を確認済み。残件は#12（受信表示）のみ。
 
 ### 12. 走行ステータスの受信表示 [中/M]
 - read characteristic のポーリングで `/coverage/state` 文字列
@@ -94,6 +95,12 @@ BLE契約（type文字列・GATT構成）は server・coverage と同時改訂�
 - 進捗（`distance_remaining` 等の feedback 値）を出す場合はBLEペイロード設計が別途必要（サイズ制約）。
   項目選定は server 側（`ws/TODO.md` §5.2）と合意すること。
 - notify 化されたら購読方式に切替（GATT構成の変更は server 側）。
+
+### 13. 閉路wire のデプロイ順序 [高/S]
+- `feature/closed-polygon-wire` 以降、有線形式は閉路（末尾=始点）。
+  旧 `ble_server` は閉路を重複扱いでNACKするため、server側の更新・反映
+  （`colcon build --packages-select ble_server`）が先行必須。
+  全体像は `ws/TODO.md` §6。
 
 ---
 
