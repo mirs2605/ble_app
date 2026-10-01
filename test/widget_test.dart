@@ -33,8 +33,41 @@ void main() {
         {'x': 1.0, 'y': 1.0},
         {'x': 4.0, 'y': 1.0},
         {'x': 4.0, 'y': 3.0},
+        {'x': 1.0, 'y': 1.0},
       ],
     });
+  });
+
+  test('serializes a closed polygon ring', () {
+    const mission = CleaningZoneMission(
+      polygon: [
+        MapPoint(x: 1, y: 1),
+        MapPoint(x: 4, y: 1),
+        MapPoint(x: 4, y: 3),
+      ],
+    );
+
+    final polygon =
+        (mission.toJson()['polygon'] as List).cast<Map<String, dynamic>>();
+    expect(polygon.length, 4);
+    expect(polygon.first, polygon.last);
+  });
+
+  test('accepts an already closed polygon without duplicating closure', () {
+    const mission = CleaningZoneMission(
+      polygon: [
+        MapPoint(x: 1, y: 1),
+        MapPoint(x: 4, y: 1),
+        MapPoint(x: 4, y: 3),
+        MapPoint(x: 1, y: 1),
+      ],
+    );
+
+    expect(mission.isValid, isTrue);
+    final polygon =
+        (mission.toJson()['polygon'] as List).cast<Map<String, dynamic>>();
+    expect(polygon.length, 4);
+    expect(polygon.first, polygon.last);
   });
 
   test('rejects invalid points', () {
