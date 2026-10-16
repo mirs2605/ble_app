@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 
 import 'controllers/ble_home_controller.dart';
+import 'services/pc_simulation_connection.dart';
 import 'theme/app_colors.dart';
 import 'widgets/ble_tabs.dart';
 import 'widgets/icon_tab_navigation.dart';
 
 void main() {
-  runApp(const MirsBleApp());
+  const simulationMode = bool.fromEnvironment('SIMULATION_MODE');
+  runApp(MirsBleApp(simulationMode: simulationMode));
 }
 
 class MirsBleApp extends StatelessWidget {
-  const MirsBleApp({super.key});
+  const MirsBleApp({super.key, this.simulationMode = false});
+
+  final bool simulationMode;
 
   @override
   Widget build(BuildContext context) {
@@ -24,13 +28,15 @@ class MirsBleApp extends StatelessWidget {
         useMaterial3: true,
       ),
       themeMode: ThemeMode.dark,
-      home: const BleHomePage(),
+      home: BleHomePage(simulationMode: simulationMode),
     );
   }
 }
 
 class BleHomePage extends StatefulWidget {
-  const BleHomePage({super.key});
+  const BleHomePage({super.key, required this.simulationMode});
+
+  final bool simulationMode;
 
   @override
   State<BleHomePage> createState() => _BleHomePageState();
@@ -42,7 +48,12 @@ class _BleHomePageState extends State<BleHomePage> {
   @override
   void initState() {
     super.initState();
-    _controller = BleHomeController();
+    _controller = BleHomeController(
+      useSimulation: widget.simulationMode,
+      connectionFactory: widget.simulationMode
+          ? PcSimulationConnection.new
+          : null,
+    );
   }
 
   @override
@@ -82,7 +93,8 @@ class _BleHomePageState extends State<BleHomePage> {
                 onLog: _controller.addLog,
                 onPermissionSettings: _controller.openPermissionSettings,
                 onClearSelection: _controller.clearSelection,
-                onSend: _controller.sendPressed,                onStatusPressed: _controller.showStatusAnnouncement,
+                onSend: _controller.sendPressed,
+                onStatusPressed: _controller.showStatusAnnouncement,
                 sendCompleted: _controller.sendCompleted,
                 sendButtonState: _controller.sendButtonState,
                 canSend: _controller.canSendSelectedMap,

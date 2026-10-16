@@ -20,18 +20,20 @@ class BleHomeController extends ChangeNotifier {
   BleHomeController({
     BleConnectionFactory? connectionFactory,
     PermissionGateway? permissionGateway,
+    bool useSimulation = false,
   }) : _permissions = permissionGateway ?? const DefaultPermissionGateway() {
-    _connection =
-        (connectionFactory ?? BleService.new)(
-          onLog: _addServiceLog,
-          onStatusChanged: _handleStatusChanged,
-        );
+    _useSimulation = useSimulation;
+    _connection = (connectionFactory ?? BleService.new)(
+      onLog: _addServiceLog,
+      onStatusChanged: _handleStatusChanged,
+    );
     _statusBoard = NoticeBoard<String>(onChanged: _guardedNotify);
     _noticeBoard = NoticeBoard<AppNotice>(onChanged: _guardedNotify);
     unawaited(_startAutoConnect());
   }
 
   late final BleConnection _connection;
+  late final bool _useSimulation;
   final PermissionGateway _permissions;
 
   BleStatus _status = BleStatus.idle;
@@ -174,10 +176,16 @@ class BleHomeController extends ChangeNotifier {
   Future<void> _startAutoConnect() async {
     if (_autoConnectStarted || _isDisposed) return;
     _autoConnectStarted = true;
-    if (!await _requestPermissions() || _isDisposed) return;
+    if ((!_useSimulation && !await _requestPermissions()) || _isDisposed) {
+      return;
+    }
     _connection.startAutoConnect();
-    addLog(AppStrings.autoConnectGuide);
-    notifyNotice(AppNotice.autoConnectStarted);
+    if (_useSimulation) {
+      addLog('PCシミュレーションモード: USB (ADB reverse) でPCへ接続します');
+    } else {
+      addLog(AppStrings.autoConnectGuide);
+      notifyNotice(AppNotice.autoConnectStarted);
+    }
     unawaited(_connection.scanAndConnect());
   }
 
@@ -216,7 +224,8 @@ class BleHomeController extends ChangeNotifier {
     _statusBoard.show(AppStrings.bleStatusLabel(status));
   }
 
-  void _addServiceLog(String message) {    if (_isDisposed) return;
+  void _addServiceLog(String message) {
+    if (_isDisposed) return;
     _addLog(message, trim: true);
   }
 

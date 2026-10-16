@@ -238,6 +238,9 @@ class BleService implements BleConnection {
     try {
       final jsonStr = jsonEncode(zone.toJson());
       final bytes = utf8.encode('$jsonStr\n');
+      final responseCapability = _adapter is BleResponseCapability
+          ? _adapter as BleResponseCapability
+          : null;
       late final int payloadSize;
       try {
         payloadSize = await _adapter.currentPayloadSize();
@@ -248,6 +251,13 @@ class BleService implements BleConnection {
       }
       if (bytes.length > maxPayloadBytes) {
         _log('❌ 清掃範囲データが大きすぎます (${bytes.length} bytes)。');
+        _setStatus(BleStatus.connected);
+        return false;
+      }
+      if (responseCapability != null &&
+          !responseCapability.hasReadableResponse &&
+          bytes.length > payloadSize) {
+        _log('BLEサーバーが応答特性を持たず、分割データも再構成できないため送信を中止しました。MTUを確認してください。');
         _setStatus(BleStatus.connected);
         return false;
       }
@@ -263,6 +273,12 @@ class BleService implements BleConnection {
         _isReady = false;
         _setStatus(BleStatus.error);
         return false;
+      }
+      if (responseCapability != null &&
+          !responseCapability.hasReadableResponse) {
+        _log('BLE書き込み完了。サーバーからACKが返らないため、ROSでの受信・計画結果はPC側で確認してください。');
+        _setStatus(BleStatus.connected);
+        return true;
       }
       late final List<int> response;
       try {
