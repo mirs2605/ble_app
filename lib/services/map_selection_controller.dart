@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/cleaning_zone.dart';
+import '../models/map_config.dart';
 import '../models/map_geometry.dart';
 
 class MapSelectionController {
@@ -16,11 +17,11 @@ class MapSelectionController {
     activeHandleIndex = null;
   }
 
-  int? hitHandle(Offset localPosition, Size size) {
+  int? hitHandle(Offset localPosition, Size size, [MapConfig? config]) {
     if (points.length != 4) return null;
 
     for (int i = 0; i < points.length; i++) {
-      final point = MapGeometry.toScreenPoint(points[i], size);
+      final point = MapGeometry.toScreenPoint(points[i], size, config);
       if ((point - localPosition).distance < 18) {
         return i;
       }
@@ -28,12 +29,21 @@ class MapSelectionController {
     return null;
   }
 
-  void updateRectangleSelection(Offset start, Offset end, Size size) {
-    points = MapGeometry.rectangleFrom(start, end, size);
+  void updateRectangleSelection(
+    Offset start,
+    Offset end,
+    Size size, [
+    MapConfig? config,
+  ]) {
+    points = MapGeometry.rectangleFrom(start, end, size, config);
   }
 
-  void updateRectangleFromPath(List<Offset> path, Size size) {
-    final rectangle = MapGeometry.rectangleFromPath(path, size);
+  void updateRectangleFromPath(
+    List<Offset> path,
+    Size size, [
+    MapConfig? config,
+  ]) {
+    final rectangle = MapGeometry.rectangleFromPath(path, size, config);
     if (rectangle != null) {
       points = rectangle;
     }

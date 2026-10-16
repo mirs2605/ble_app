@@ -1,4 +1,5 @@
 import '../models/cleaning_zone.dart';
+import '../models/initial_pose.dart';
 
 /// BLE接続の状態
 enum BleStatus {
@@ -23,6 +24,9 @@ abstract class BleConnection {
   Future<void> scanAndConnect();
 
   Future<bool> sendCleaningZone(CleaningZoneMission zone);
+
+  /// 開始地点（2D Pose Estimate）を送信する。
+  Future<bool> sendInitialPose(InitialPoseMission pose);
 
   Future<void> dispose();
 }
