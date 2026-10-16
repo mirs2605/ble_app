@@ -4,16 +4,19 @@ import 'package:flutter/material.dart';
 import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
 import '../models/initial_pose.dart';
+import '../models/map_config.dart';
+import '../models/map_edit_mode.dart';
 import '../models/send_button_state.dart';
 import '../services/ble_service.dart';
 import '../services/map_selection_controller.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_strings.dart';
 import 'ble_status_indicator.dart';
 import 'status_notification_bar.dart';
 import 'floating_action_controls.dart';
 import 'map_selection_area.dart';
+import 'map_management_button.dart';
 import 'polygon_form.dart';
-import '../theme/app_colors.dart';
 
 class BleHomeTab extends StatelessWidget {
   final MapSelectionController mapSelection;
@@ -32,6 +35,20 @@ class BleHomeTab extends StatelessWidget {
   final bool canSend;
   final SendButtonState sendButtonState;
 
+  /// 開始地点モード関連の配線。
+  final MapEditMode editMode;
+  final InitialPoseMission? initialPose;
+  final ValueChanged<InitialPoseMission> onPoseChanged;
+  final VoidCallback onPoseModePressed;
+  final VoidCallback onClearPose;
+  final VoidCallback onSendPose;
+  final bool canSendPose;
+  final MapConfig activeMap;
+  final List<MapConfig> maps;
+  final Future<void> Function(MapConfig) onMapSelected;
+  final Future<void> Function(MapConfig) onMapAdded;
+  final Future<void> Function(MapConfig) onMapDeleted;
+
   const BleHomeTab({
     super.key,
     required this.mapSelection,
@@ -49,19 +66,49 @@ class BleHomeTab extends StatelessWidget {
     required this.canSend,
     required this.sendButtonState,
     this.onSelectionIdleChanged,
+    this.editMode = MapEditMode.polygon,
+    this.initialPose,
+    required this.onPoseChanged,
+    required this.onPoseModePressed,
+    required this.onClearPose,
+    required this.onSendPose,
+    required this.canSendPose,
+    required this.activeMap,
+    required this.maps,
+    required this.onMapSelected,
+    required this.onMapAdded,
+    required this.onMapDeleted,
   });
 
   @override
   Widget build(BuildContext context) {
+    final poseMode = editMode == MapEditMode.initialPose;
     return Stack(
       fit: StackFit.expand,
       children: [
         MapSelectionArea(
           controller: mapSelection,
+          mapConfig: activeMap,
           onChanged: onMapChanged,
           onLog: onLog,
           sendCompleted: sendCompleted,
           onSelectionIdleChanged: onSelectionIdleChanged,
+          editMode: editMode,
+          initialPose: initialPose,
+          onPoseChanged: onPoseChanged,
+        ),
+        Positioned(
+          top: 64,
+          right: 12,
+          child: SafeArea(
+            child: MapManagementButton(
+              activeMap: activeMap,
+              maps: maps,
+              onSelect: onMapSelected,
+              onAdd: onMapAdded,
+              onDelete: onMapDeleted,
+            ),
+          ),
         ),
         _TopLeftStatus(
           status: status,
@@ -69,18 +116,26 @@ class BleHomeTab extends StatelessWidget {
           notice: notice,
           onPressed: onStatusPressed,
           trailing: permissionsPermanentlyDenied
-              ? PermissionSettingsButton(
-                  onPressed: onPermissionSettings,
-                )
+              ? PermissionSettingsButton(onPressed: onPermissionSettings)
               : null,
         ),
         MapSelectionActions(
-          showClear: mapSelection.points.length >= 4,
-          showSend: mapSelection.points.length >= 4,
-          canSend: canSend,
+          showClear: poseMode
+              ? initialPose != null
+              : mapSelection.points.length >= 4,
+          showSend: poseMode
+              ? initialPose != null
+              : mapSelection.points.length >= 4,
+          canSend: poseMode ? canSendPose : canSend,
           sendButtonState: sendButtonState,
-          onClear: onClearSelection,
-          onSend: onSend,
+          onClear: poseMode ? onClearPose : onClearSelection,
+          onSend: poseMode ? onSendPose : onSend,
+          clearTooltip: poseMode
+              ? AppStrings.clearPoseTooltip
+              : AppStrings.clearTooltip,
+          showPoseMode: true,
+          poseModeActive: poseMode,
+          onPoseMode: onPoseModePressed,
         ),
       ],
     );
@@ -167,10 +222,12 @@ class _BleValuesTabState extends State<BleValuesTab> {
     if (!listEquals(oldWidget.selectedMapPoints, widget.selectedMapPoints) &&
         widget.selectedMapPoints.length == 4) {
       for (int i = 0; i < 4; i++) {
-        _xControllers[i].text =
-            widget.selectedMapPoints[i].x.toStringAsFixed(2);
-        _yControllers[i].text =
-            widget.selectedMapPoints[i].y.toStringAsFixed(2);
+        _xControllers[i].text = widget.selectedMapPoints[i].x.toStringAsFixed(
+          2,
+        );
+        _yControllers[i].text = widget.selectedMapPoints[i].y.toStringAsFixed(
+          2,
+        );
       }
     }
   }
@@ -319,8 +376,7 @@ class _InitialPoseForm extends StatelessWidget {
         labelText: label,
         border: const OutlineInputBorder(),
         isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       ),
       keyboardType: const TextInputType.numberWithOptions(
         decimal: true,
@@ -357,8 +413,10 @@ class BleLogsTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 56),
-                const Text(AppStrings.logsTitle,
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  AppStrings.logsTitle,
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 Expanded(
                   child: Container(
@@ -434,10 +492,7 @@ class _TopLeftStatus extends StatelessWidget {
               fit: FlexFit.loose,
               child: StatusNotificationBar.notice(notice),
             ),
-            if (trailing != null) ...[
-              const SizedBox(width: 8),
-              trailing,
-            ],
+            if (trailing != null) ...[const SizedBox(width: 8), trailing],
           ],
         ),
       ),

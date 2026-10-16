@@ -5,9 +5,13 @@ import 'package:flutter/widgets.dart';
 import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
 import '../models/initial_pose.dart';
+import '../models/map_config.dart';
+import '../models/map_edit_mode.dart';
 import '../models/send_button_state.dart';
 import '../services/ble_connection.dart';
 import '../services/ble_service.dart';
+import '../services/initial_pose_controller.dart';
+import '../services/map_config_repository.dart';
 import '../services/map_selection_controller.dart';
 import '../services/permission_gateway.dart';
 import '../theme/app_strings.dart';
@@ -21,19 +25,22 @@ class BleHomeController extends ChangeNotifier {
   BleHomeController({
     BleConnectionFactory? connectionFactory,
     PermissionGateway? permissionGateway,
-  }) : _permissions = permissionGateway ?? const DefaultPermissionGateway() {
-    _connection =
-        (connectionFactory ?? BleService.new)(
-          onLog: _addServiceLog,
-          onStatusChanged: _handleStatusChanged,
-        );
+    MapConfigRepository? mapRepository,
+  }) : _permissions = permissionGateway ?? const DefaultPermissionGateway(),
+       _mapRepo = mapRepository ?? MapConfigRepository.instance {
+    _connection = (connectionFactory ?? BleService.new)(
+      onLog: _addServiceLog,
+      onStatusChanged: _handleStatusChanged,
+    );
     _statusBoard = NoticeBoard<String>(onChanged: _guardedNotify);
     _noticeBoard = NoticeBoard<AppNotice>(onChanged: _guardedNotify);
     unawaited(_startAutoConnect());
+    unawaited(_loadMapConfig());
   }
 
   late final BleConnection _connection;
   final PermissionGateway _permissions;
+  final MapConfigRepository _mapRepo;
 
   BleStatus _status = BleStatus.idle;
   bool _permissionsPermanentlyDenied = false;
@@ -41,9 +48,21 @@ class BleHomeController extends ChangeNotifier {
   late final NoticeBoard<AppNotice> _noticeBoard;
   final SendMissionTracker _sendTracker = SendMissionTracker();
 
+  /// 現在表示中のマップ設定。DB読み込み完了まではBuiltinMapsのデフォルト値。
+  MapConfig _activeMapConfig = BuiltinMaps.gakuseigenkan;
+
+  /// マップ一覧。DB読み込み完了後に更新される。
+  List<MapConfig> _allMaps = [];
+
   /// 地図選択の唯一の所有者。MapSelectionAreaはこのインスタンスを
   /// 直接操作し、確定時にonChangedで通知する（値のミラーは持たない）。
   final MapSelectionController mapSelection = MapSelectionController();
+
+  /// 開始地点の確定値ホルダー。ドラッグ中の途中状態はMapSelectionAreaが持つ。
+  final InitialPoseController poseSelection = InitialPoseController();
+
+  /// 地図タブの編集モード（範囲選択／開始地点指定）。
+  MapEditMode editMode = MapEditMode.polygon;
 
   /// フリーハンド描画中でないこと。MapSelectionAreaが報告する。
   /// ヒント表示条件（未選択かつ描画中でない）の後半を担う。
@@ -57,13 +76,26 @@ class BleHomeController extends ChangeNotifier {
   bool get permissionsPermanentlyDenied => _permissionsPermanentlyDenied;
   String? get statusAnnouncement => _statusBoard.value;
 
-  /// 表示中の独立通知。一時通知（3秒）を優先し、なければ囲み促進ヒント。
+  /// 現在アクティブなマップ設定。
+  MapConfig get activeMapConfig => _activeMapConfig;
+
+  /// 登録済みマップ一覧。
+  List<MapConfig> get allMaps => List.unmodifiable(_allMaps);
+
+  /// 表示中の独立通知。一時通知（3秒）を優先し、なければモード別のヒント。
   /// ヒント条件は従来の画面下表示と同一：未選択かつ描画中でないこと。
-  AppNotice? get activeNotice =>
-      _noticeBoard.value ??
-      (_selectionIdle && mapSelection.points.isEmpty
-          ? AppNotice.encloseRange
-          : null);
+  AppNotice? get activeNotice {
+    final hint = _idleHint;
+    return _noticeBoard.value ?? hint;
+  }
+
+  AppNotice? get _idleHint {
+    if (!_selectionIdle) return null;
+    if (editMode == MapEditMode.initialPose) {
+      return poseSelection.hasPose ? null : AppNotice.specifyPose;
+    }
+    return mapSelection.points.isEmpty ? AppNotice.encloseRange : null;
+  }
 
   bool get sendCompleted => _sendTracker.sendCompleted;
   SendButtonState get sendButtonState => _sendTracker.buttonState;
@@ -74,6 +106,60 @@ class BleHomeController extends ChangeNotifier {
 
   void _guardedNotify() {
     if (!_isDisposed) notifyListeners();
+  }
+
+  /// DBからアクティブマップと一覧を読み込む。
+  Future<void> _loadMapConfig() async {
+    if (_isDisposed) return;
+    final active = await _mapRepo.activeMap();
+    final all = await _mapRepo.allMaps();
+    if (_isDisposed) return;
+    _activeMapConfig = active;
+    _allMaps = all;
+    notifyListeners();
+  }
+
+  /// アクティブマップを切り替える。
+  Future<void> switchMap(MapConfig config) async {
+    if (_isDisposed) return;
+    final id = config.id;
+    if (id == null) return;
+    await _mapRepo.setActiveMap(id);
+    if (_isDisposed) return;
+    _activeMapConfig = config;
+    // マップ切り替え時は選択をリセットする。
+    clearSelection();
+    clearInitialPose();
+    notifyListeners();
+  }
+
+  /// マップを追加してアクティブにする。
+  Future<void> addMap(MapConfig config) async {
+    if (_isDisposed) return;
+    final saved = await _mapRepo.addMap(config);
+    await _mapRepo.setActiveMap(saved.id!);
+    if (_isDisposed) return;
+    _activeMapConfig = saved;
+    _allMaps = await _mapRepo.allMaps();
+    clearSelection();
+    clearInitialPose();
+    notifyListeners();
+  }
+
+  /// マップを削除する。アクティブマップは削除不可。
+  Future<void> deleteMap(MapConfig config) async {
+    if (_isDisposed) return;
+    final id = config.id;
+    if (id == null) return;
+    try {
+      await _mapRepo.deleteMap(id);
+    } on StateError catch (e) {
+      addLog('❌ ${e.message}');
+      return;
+    }
+    if (_isDisposed) return;
+    _allMaps = await _mapRepo.allMaps();
+    notifyListeners();
   }
 
   void selectTab(int index) {
@@ -92,6 +178,57 @@ class BleHomeController extends ChangeNotifier {
     mapSelection.clear();
     _sendTracker.resetProgress();
     notifyListeners();
+  }
+
+  /// 開始地点モードに入る。範囲選択の描画途中状態は破棄しない。
+  void enterPoseMode() {
+    if (_isDisposed || editMode == MapEditMode.initialPose) return;
+    editMode = MapEditMode.initialPose;
+    notifyListeners();
+  }
+
+  /// 範囲選択モードに戻る。
+  void exitPoseMode() {
+    if (_isDisposed || editMode == MapEditMode.polygon) return;
+    editMode = MapEditMode.polygon;
+    notifyListeners();
+  }
+
+  /// 地図上のタップ＋ドラッグ確定結果を保持する。
+  void setInitialPose(InitialPoseMission pose) {
+    poseSelection.pose = pose;
+    _sendTracker.resetProgress();
+    addLog(
+      '📍 ${AppStrings.poseSet} (${pose.x.toStringAsFixed(2)}, '
+      '${pose.y.toStringAsFixed(2)}, '
+      '${pose.yawDegrees.toStringAsFixed(0)}°)',
+    );
+    notifyListeners();
+  }
+
+  void clearInitialPose() {
+    poseSelection.clear();
+    _sendTracker.resetProgress();
+    notifyListeners();
+  }
+
+  InitialPoseMission? get selectedInitialPose => poseSelection.pose;
+
+  bool get canSendSelectedPose =>
+      _status == BleStatus.connected &&
+      !_sendTracker.isSending &&
+      poseSelection.pose != null &&
+      poseSelection.pose!.isValid;
+
+  /// 地図タブ用。指定済みの開始地点を送信する。
+  Future<void> sendPosePressed() async {
+    final pose = poseSelection.pose;
+    if (pose == null) {
+      addLog('❌ ${AppStrings.specifyPose}');
+      notifyNotice(AppNotice.specifyPose);
+      return;
+    }
+    await sendInitialPose(pose);
   }
 
   /// MapSelectionAreaからの描画状態報告を受け取る。
@@ -246,7 +383,8 @@ class BleHomeController extends ChangeNotifier {
     _statusBoard.show(AppStrings.bleStatusLabel(status));
   }
 
-  void _addServiceLog(String message) {    if (_isDisposed) return;
+  void _addServiceLog(String message) {
+    if (_isDisposed) return;
     _addLog(message, trim: true);
   }
 

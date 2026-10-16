@@ -44,18 +44,34 @@ class CleaningZoneMission {
   });
 
   /// ROS 2 ノードが期待する JSON Map にシリアライズ
-  Map<String, dynamic> toJson() => {
-    'type': type,
-    'frame_id': frameId,
-    'polygon': polygon.map((p) => p.toJson()).toList(),
-  };
+  ///
+  /// 有線形式は閉路（末尾が始点と一致）とする。受信側は開路・閉路の
+  /// どちらも受け付けるが、Fields2Cover規約に合わせて閉路で送る。
+  Map<String, dynamic> toJson() {
+    final closed = List<MapPoint>.of(polygon);
+    if (closed.isNotEmpty && closed.first != closed.last) {
+      closed.add(closed.first);
+    }
+    return {
+      'type': type,
+      'frame_id': frameId,
+      'polygon': closed.map((p) => p.toJson()).toList(),
+    };
+  }
 
   /// 任意ポリゴンとしての清掃範囲を検証する。
+  ///
+  /// 閉路表現（末尾のみ始点と一致）は許容し、除去して検証する。
+  /// それ以外の重複点は不正とする。
   bool get isValid {
+    final pts = List<MapPoint>.of(polygon);
+    if (pts.isNotEmpty && pts.first == pts.last) {
+      pts.removeLast();
+    }
     if (!(type.isNotEmpty &&
         frameId.isNotEmpty &&
-        polygon.length >= minPoints &&
-        polygon.every(
+        pts.length >= minPoints &&
+        pts.every(
           (p) =>
               p.x.isFinite &&
               p.y.isFinite &&
@@ -65,33 +81,33 @@ class CleaningZoneMission {
       return false;
     }
 
-    for (var i = 0; i < polygon.length; i++) {
-      for (var j = i + 1; j < polygon.length; j++) {
-        if (polygon[i] == polygon[j]) return false;
+    for (var i = 0; i < pts.length; i++) {
+      for (var j = i + 1; j < pts.length; j++) {
+        if (pts[i] == pts[j]) return false;
       }
     }
 
-    if (_signedArea.abs() < minArea) return false;
+    if (_signedAreaOf(pts).abs() < minArea) return false;
 
-    for (var i = 0; i < polygon.length; i++) {
-      final a = polygon[i];
-      final b = polygon[(i + 1) % polygon.length];
-      for (var j = i + 1; j < polygon.length; j++) {
-        if (j == i || (j == (i + 1) % polygon.length)) continue;
-        if (i == 0 && j == polygon.length - 1) continue;
-        final c = polygon[j];
-        final d = polygon[(j + 1) % polygon.length];
+    for (var i = 0; i < pts.length; i++) {
+      final a = pts[i];
+      final b = pts[(i + 1) % pts.length];
+      for (var j = i + 1; j < pts.length; j++) {
+        if (j == i || (j == (i + 1) % pts.length)) continue;
+        if (i == 0 && j == pts.length - 1) continue;
+        final c = pts[j];
+        final d = pts[(j + 1) % pts.length];
         if (_segmentsIntersect(a, b, c, d)) return false;
       }
     }
     return true;
   }
 
-  double get _signedArea {
+  static double _signedAreaOf(List<MapPoint> pts) {
     var area = 0.0;
-    for (var i = 0; i < polygon.length; i++) {
-      final current = polygon[i];
-      final next = polygon[(i + 1) % polygon.length];
+    for (var i = 0; i < pts.length; i++) {
+      final current = pts[i];
+      final next = pts[(i + 1) % pts.length];
       area += current.x * next.y - next.x * current.y;
     }
     return area / 2;

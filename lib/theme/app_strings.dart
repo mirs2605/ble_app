@@ -16,6 +16,8 @@ abstract final class AppStrings {
   static const permissionMissing = 'パーミッション不足';
   static const settingsOpenFailed = 'アプリ設定を開けませんでした';
   static const encloseRange = '範囲を囲ってください';
+  static const specifyPose = '開始点をタップし、離さずドラッグで向きを指定';
+  static const poseSet = '開始地点を設定しました';
   static const invalidInitialPose = '開始地点の値が不正です';
 
   // --- ログ（Controller経由） ---
@@ -28,6 +30,32 @@ abstract final class AppStrings {
   static const sent = '送信完了';
   static const sendTooltip = '送信';
   static const clearTooltip = '範囲を削除';
+  static const clearPoseTooltip = '開始地点を削除';
+  static const poseModeTooltip = '開始地点モード';
+  static const poseModeExitTooltip = '範囲モードに戻る';
+  static const mapsTitle = '地図管理';
+  static const addMap = 'スマホから地図を追加';
+  static const mapDetailsTitle = '地図情報';
+  static const mapName = '地図名';
+  static const mapResolution = '解像度 (m/px)';
+  static const mapResolutionHelp = '地図画像の対応する map.yaml の値';
+  static const mapOriginX = '原点 X (m)';
+  static const mapOriginY = '原点 Y (m)';
+  static const requiredField = '入力してください';
+  static const positiveNumberRequired = '0より大きい数値を入力してください';
+  static const numberRequired = '有効な数値を入力してください';
+  static const cancel = 'キャンセル';
+  static const delete = '削除';
+  static const close = '閉じる';
+  static const deleteMapTitle = '地図を削除';
+  static const detectedMapDimensionsLabel = '画像サイズ:';
+  static const mapOperationFailedLabel = '地図を変更できませんでした:';
+
+  static String detectedMapDimensions(int width, int height) =>
+      '$detectedMapDimensionsLabel $width × $height px';
+  static String deleteMapConfirm(String name) => '「$name」を削除しますか？';
+  static String mapOperationFailed(String message) =>
+      '$mapOperationFailedLabel $message';
 
   // --- Bluetoothステータス ---
   static const showBluetoothStatus = 'Bluetoothステータスを表示';
@@ -60,6 +88,7 @@ extension AppNoticePresentation on AppNotice {
     AppNotice.permissionMissing => AppStrings.permissionMissing,
     AppNotice.settingsOpenFailed => AppStrings.settingsOpenFailed,
     AppNotice.encloseRange => AppStrings.encloseRange,
+    AppNotice.specifyPose => AppStrings.specifyPose,
     AppNotice.invalidInitialPose => AppStrings.invalidInitialPose,
   };
 
@@ -72,5 +101,6 @@ extension AppNoticePresentation on AppNotice {
     AppNotice.autoConnectStarted => Icons.bluetooth_searching,
     AppNotice.permissionMissing => Icons.settings,
     AppNotice.encloseRange => Icons.draw_outlined,
+    AppNotice.specifyPose => Icons.my_location,
   };
 }

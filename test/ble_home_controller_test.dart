@@ -4,10 +4,13 @@ import 'package:mirs_ble_app/controllers/ble_home_controller.dart';
 import 'package:mirs_ble_app/models/app_notice.dart';
 import 'package:mirs_ble_app/models/cleaning_zone.dart';
 import 'package:mirs_ble_app/models/initial_pose.dart';
+import 'package:mirs_ble_app/models/map_config.dart';
 import 'package:mirs_ble_app/models/send_button_state.dart';
 import 'package:mirs_ble_app/services/ble_connection.dart';
 import 'package:mirs_ble_app/services/permission_gateway.dart';
 import 'package:mirs_ble_app/services/permission_service.dart';
+import 'package:mirs_ble_app/services/map_config_repository.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class FakeBleConnection implements BleConnection {
   FakeBleConnection({required this.onLog, required this.onStatusChanged});
@@ -92,7 +95,8 @@ BleHomeController buildController({
   FakeBleConnection? connection,
   FakePermissions? permissions,
 }) {
-  final conn = connection ?? FakeBleConnection(onLog: (_) {}, onStatusChanged: (_) {});
+  final conn =
+      connection ?? FakeBleConnection(onLog: (_) {}, onStatusChanged: (_) {});
   final perms = permissions ?? FakePermissions.granted();
   return BleHomeController(
     connectionFactory: ({required onLog, required onStatusChanged}) {
@@ -105,9 +109,18 @@ BleHomeController buildController({
 }
 
 /// コンストラクタ内の非同期自動接続を流す。
-Future<void> flushAsync() => Future<void>.delayed(const Duration(milliseconds: 10));
+Future<void> flushAsync() =>
+    Future<void>.delayed(const Duration(milliseconds: 10));
 
 void main() {
+  setUpAll(() async {
+    sqfliteFfiInit();
+    await MapConfigRepository.init(
+      factory: databaseFactoryFfi,
+      path: inMemoryDatabasePath,
+    );
+  });
+
   test('権限許可で自動接続が開始される', () async {
     final conn = FakeBleConnection(onLog: (_) {}, onStatusChanged: (_) {});
     final controller = buildController(connection: conn);
@@ -339,5 +352,110 @@ void main() {
 
     controller.clearNotification();
     expect(controller.activeNotice, AppNotice.encloseRange);
+  });
+
+  test('開始地点モードでヒントが切り替わる', () async {
+    final controller = buildController();
+    addTearDown(controller.dispose);
+    await flushAsync();
+    controller.clearNotification();
+
+    controller.enterPoseMode();
+    expect(controller.activeNotice, AppNotice.specifyPose);
+
+    controller.setInitialPose(
+      const InitialPoseMission(x: 1.0, y: 2.0, yaw: 0.5),
+    );
+    expect(controller.activeNotice, isNull);
+
+    controller.exitPoseMode();
+    expect(controller.activeNotice, AppNotice.encloseRange);
+  });
+
+  test('開始地点モードへの出入りは冪等である', () async {
+    final controller = buildController();
+    addTearDown(controller.dispose);
+    await flushAsync();
+    controller.clearNotification();
+
+    controller.exitPoseMode();
+    controller.enterPoseMode();
+    controller.enterPoseMode();
+    expect(controller.activeNotice, AppNotice.specifyPose);
+  });
+
+  test('指定済みの開始地点を送信できる', () async {
+    final conn = FakeBleConnection(onLog: (_) {}, onStatusChanged: (_) {});
+    final controller = buildController(connection: conn);
+    addTearDown(controller.dispose);
+    await flushAsync();
+    controller.clearNotification();
+    conn.emit(BleStatus.connected);
+
+    controller.setInitialPose(
+      const InitialPoseMission(x: 1.0, y: 2.0, yaw: 0.0),
+    );
+    expect(controller.canSendSelectedPose, isTrue);
+    await controller.sendPosePressed();
+
+    expect(conn.sendPoseCalls, 1);
+    expect(controller.activeNotice, AppNotice.sendDone);
+  });
+
+  test('開始地点なしの送信は通知のみで送信しない', () async {
+    final conn = FakeBleConnection(onLog: (_) {}, onStatusChanged: (_) {});
+    final controller = buildController(connection: conn);
+    addTearDown(controller.dispose);
+    await flushAsync();
+    controller.clearNotification();
+
+    await controller.sendPosePressed();
+
+    expect(conn.sendPoseCalls, 0);
+    expect(controller.activeNotice, AppNotice.specifyPose);
+  });
+
+  test('開始地点の削除でヒントに戻る', () async {
+    final controller = buildController();
+    addTearDown(controller.dispose);
+    await flushAsync();
+    controller.clearNotification();
+    controller.enterPoseMode();
+
+    controller.setInitialPose(
+      const InitialPoseMission(x: 1.0, y: 2.0, yaw: 0.0),
+    );
+    expect(controller.activeNotice, isNull);
+
+    controller.clearInitialPose();
+    expect(controller.activeNotice, AppNotice.specifyPose);
+  });
+
+  test('地図切替で選択範囲と開始地点を破棄する', () async {
+    final controller = buildController();
+    addTearDown(controller.dispose);
+    await flushAsync();
+
+    controller.setSelectedMapPoints(const [
+      MapPoint(x: 1, y: 1),
+      MapPoint(x: 4, y: 1),
+      MapPoint(x: 4, y: 3),
+      MapPoint(x: 1, y: 3),
+    ]);
+    controller.setInitialPose(const InitialPoseMission(x: 1, y: 2, yaw: 0));
+    final otherMap = controller.allMaps.firstWhere(
+      (map) => map.id != controller.activeMapConfig.id,
+    );
+
+    await controller.switchMap(otherMap);
+
+    expect(controller.activeMapConfig, otherMap);
+    expect(controller.selectedMapPoints, isEmpty);
+    expect(controller.selectedInitialPose, isNull);
+    await MapConfigRepository.instance.setActiveMap(
+      controller.allMaps
+          .firstWhere((map) => map.name == BuiltinMaps.gakuseigenkan.name)
+          .id!,
+    );
   });
 }
