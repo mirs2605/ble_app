@@ -41,6 +41,9 @@ dependencies:
   # JSON (標準ライブラリで対応するため追加パッケージ不要)
   permission_handler: ^11.3.1
   vector_math: ^2.1.4
+  sqflite: ^2.4.4+1
+  image_picker: ^1.2.4
+  path_provider: ^2.1.6
 
 dev_dependencies:
   flutter_test:
@@ -52,6 +55,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  sqflite_common_ffi: ^2.4.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -66,6 +70,7 @@ flutter:
 
   assets:
     - assets/maps/mirs_map.png
+    - assets/maps/gakuseigenkan.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
