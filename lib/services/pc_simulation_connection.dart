@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/cleaning_zone.dart';
+import '../models/initial_pose.dart';
 import 'ble_connection.dart';
 
 /// Sends the selected zone to the PC ROS 2 gateway through `adb reverse`.
@@ -51,14 +52,28 @@ class PcSimulationConnection implements BleConnection {
   @override
   Future<bool> sendCleaningZone(CleaningZoneMission zone) async {
     if (_stopped || !zone.isValid) return false;
+    return _sendPayload('/cleaning_zone', zone.toJson(), '清掃範囲');
+  }
+
+  @override
+  Future<bool> sendInitialPose(InitialPoseMission pose) async {
+    if (_stopped || !pose.isValid) return false;
+    return _sendPayload('/initial_pose', pose.toJson(), '開始地点');
+  }
+
+  Future<bool> _sendPayload(
+    String path,
+    Map<String, dynamic> payload,
+    String label,
+  ) async {
     _setStatus(BleStatus.sending);
     HttpClientResponse? response;
     try {
       final request = await _client
-          .postUrl(Uri.parse('http://127.0.0.1:8765/cleaning_zone'))
+          .postUrl(Uri.parse('http://127.0.0.1:8765$path'))
           .timeout(const Duration(seconds: 6));
       request.headers.contentType = ContentType.json;
-      request.write(jsonEncode(zone.toJson()));
+      request.write(jsonEncode(payload));
       response = await request.close().timeout(const Duration(seconds: 8));
       final body = await utf8.decoder.bind(response).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -66,7 +81,7 @@ class PcSimulationConnection implements BleConnection {
         _setStatus(BleStatus.error);
         return false;
       }
-      onLog('清掃範囲をPCへ送信しました。ROS 2で経路を計算します');
+      onLog('$labelをPCへ送信しました');
       _setStatus(BleStatus.connected);
       return true;
     } on TimeoutException catch (error) {

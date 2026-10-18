@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 
 import 'controllers/ble_home_controller.dart';
 import 'services/pc_simulation_connection.dart';
+import 'models/map_edit_mode.dart';
+import 'services/map_config_repository.dart';
 import 'theme/app_colors.dart';
 import 'widgets/ble_tabs.dart';
 import 'widgets/icon_tab_navigation.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await MapConfigRepository.init();
   const simulationMode = bool.fromEnvironment('SIMULATION_MODE');
   runApp(MirsBleApp(simulationMode: simulationMode));
 }
@@ -78,6 +82,8 @@ class _BleHomePageState extends State<BleHomePage> {
                 selectedMapPoints: _controller.selectedMapPoints,
                 onSendPolygon: _controller.sendPolygon,
                 canSendPolygon: _controller.canSendPolygon,
+                onSendInitialPose: _controller.sendInitialPose,
+                canSendInitialPose: _controller.canSendInitialPose,
                 onStatusPressed: _controller.showStatusAnnouncement,
                 sendButtonState: _controller.sendButtonState,
               ),
@@ -98,6 +104,20 @@ class _BleHomePageState extends State<BleHomePage> {
                 sendCompleted: _controller.sendCompleted,
                 sendButtonState: _controller.sendButtonState,
                 canSend: _controller.canSendSelectedMap,
+                editMode: _controller.editMode,
+                initialPose: _controller.selectedInitialPose,
+                onPoseChanged: _controller.setInitialPose,
+                onPoseModePressed: _controller.editMode == MapEditMode.polygon
+                    ? _controller.enterPoseMode
+                    : _controller.exitPoseMode,
+                onClearPose: _controller.clearInitialPose,
+                onSendPose: _controller.sendPosePressed,
+                canSendPose: _controller.canSendSelectedPose,
+                activeMap: _controller.activeMapConfig,
+                maps: _controller.allMaps,
+                onMapSelected: _controller.switchMap,
+                onMapAdded: _controller.addMap,
+                onMapDeleted: _controller.deleteMap,
               ),
               BleLogsTab(
                 logs: _controller.logs,

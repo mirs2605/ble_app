@@ -3,10 +3,11 @@ import json
 import math
 import queue
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from math import cos, sin
 from threading import Thread
 
 import rclpy
-from geometry_msgs.msg import Point32, PolygonStamped
+from geometry_msgs.msg import Point32, PolygonStamped, PoseWithCovarianceStamped
 from rclpy.node import Node
 
 
@@ -14,7 +15,7 @@ class ZoneHandler(BaseHTTPRequestHandler):
     """HTTP endpoint used by the Android app through `adb reverse`."""
 
     def do_POST(self):
-        if self.path != '/cleaning_zone':
+        if self.path not in ('/cleaning_zone', '/initial_pose'):
             self._reply(404, {'error': 'unknown endpoint'})
             return
         try:
@@ -22,22 +23,31 @@ class ZoneHandler(BaseHTTPRequestHandler):
             if length <= 0 or length > 1_000_000:
                 raise ValueError('invalid Content-Length')
             payload = json.loads(self.rfile.read(length))
-            if payload.get('type') != 'cleaning_zone':
-                raise ValueError('type must be cleaning_zone')
             frame_id = payload.get('frame_id', 'map')
-            vertices = payload.get('polygon')
             if not isinstance(frame_id, str) or not frame_id:
                 raise ValueError('frame_id must be a non-empty string')
-            if not isinstance(vertices, list) or len(vertices) < 3 or len(vertices) > 1000:
-                raise ValueError('polygon must contain 3 to 1000 points')
-            points = []
-            for vertex in vertices:
-                x, y = float(vertex['x']), float(vertex['y'])
-                if not math.isfinite(x) or not math.isfinite(y) or abs(x) > 1000 or abs(y) > 1000:
-                    raise ValueError('point coordinates must be finite and within +/-1000 m')
-                points.append((x, y))
-            self.server.zone_queue.put((frame_id, points))
-            self._reply(202, {'status': 'accepted', 'points': len(points)})
+            if self.path == '/cleaning_zone':
+                if payload.get('type') != 'cleaning_zone':
+                    raise ValueError('type must be cleaning_zone')
+                vertices = payload.get('polygon')
+                if not isinstance(vertices, list) or len(vertices) < 3 or len(vertices) > 1000:
+                    raise ValueError('polygon must contain 3 to 1000 points')
+                points = []
+                for vertex in vertices:
+                    x, y = float(vertex['x']), float(vertex['y'])
+                    if not math.isfinite(x) or not math.isfinite(y) or abs(x) > 1000 or abs(y) > 1000:
+                        raise ValueError('point coordinates must be finite and within +/-1000 m')
+                    points.append((x, y))
+                self.server.zone_queue.put(('zone', frame_id, points))
+                self._reply(202, {'status': 'accepted', 'points': len(points)})
+            else:
+                if payload.get('type') != 'initial_pose':
+                    raise ValueError('type must be initial_pose')
+                x, y, yaw = float(payload['x']), float(payload['y']), float(payload['yaw'])
+                if any(not math.isfinite(value) or abs(value) > 1000 for value in (x, y, yaw)):
+                    raise ValueError('pose values must be finite and within +/-1000')
+                self.server.zone_queue.put(('pose', frame_id, (x, y, yaw)))
+                self._reply(202, {'status': 'accepted'})
         except (ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
             self._reply(400, {'error': str(error)})
 
@@ -60,8 +70,12 @@ class HttpGateway(Node):
         self.declare_parameter('host', '0.0.0.0')
         self.declare_parameter('port', 8765)
         self.declare_parameter('zone_topic', '/cleaning_zone')
+        self.declare_parameter('pose_topic', '/initialpose')
+        self._pose_topic = self.get_parameter('pose_topic').value
         self._publisher = self.create_publisher(
             PolygonStamped, self.get_parameter('zone_topic').value, 10)
+        self._pose_publisher = self.create_publisher(
+            PoseWithCovarianceStamped, self._pose_topic, 10)
         self._queue = queue.Queue()
         host = self.get_parameter('host').value
         port = int(self.get_parameter('port').value)
@@ -77,15 +91,30 @@ class HttpGateway(Node):
     def _publish_pending(self):
         while True:
             try:
-                frame_id, points = self._queue.get_nowait()
+                kind, frame_id, values = self._queue.get_nowait()
             except queue.Empty:
                 return
+            if kind == 'pose':
+                x, y, yaw = values
+                message = PoseWithCovarianceStamped()
+                message.header.stamp = self.get_clock().now().to_msg()
+                message.header.frame_id = frame_id
+                message.pose.pose.position.x = x
+                message.pose.pose.position.y = y
+                message.pose.pose.orientation.z = sin(yaw / 2.0)
+                message.pose.pose.orientation.w = cos(yaw / 2.0)
+                message.pose.covariance[0] = 0.25
+                message.pose.covariance[7] = 0.25
+                message.pose.covariance[35] = 0.0685
+                self._pose_publisher.publish(message)
+                self.get_logger().info(f'Published initial pose to {self._pose_topic}')
+                continue
             message = PolygonStamped()
             message.header.stamp = self.get_clock().now().to_msg()
             message.header.frame_id = frame_id
-            message.polygon.points = [Point32(x=x, y=y, z=0.0) for x, y in points]
+            message.polygon.points = [Point32(x=x, y=y, z=0.0) for x, y in values]
             self._publisher.publish(message)
-            self.get_logger().info(f'Published {len(points)} cleaning-zone points to /cleaning_zone')
+            self.get_logger().info(f'Published {len(values)} cleaning-zone points to /cleaning_zone')
 
     def destroy_node(self):
         self._server.shutdown()

@@ -1,8 +1,15 @@
+import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' as vm;
 
 import '../models/cleaning_zone.dart';
+import '../models/initial_pose.dart';
+import '../models/map_config.dart';
+import '../models/map_edit_mode.dart';
 import '../models/map_geometry.dart';
+import '../services/initial_pose_controller.dart';
 import '../services/map_selection_controller.dart';
 import '../theme/app_colors.dart';
 
@@ -15,6 +22,18 @@ class MapSelectionArea extends StatefulWidget {
   final ValueChanged<String>? onLog;
   final bool sendCompleted;
 
+  /// 表示するマップの設定。nullの場合はデフォルト（gakuseigenkan）を使う。
+  final MapConfig? mapConfig;
+
+  /// 地図タブの編集モード。開始地点モードでは単指操作がpose指定になる。
+  final MapEditMode editMode;
+
+  /// 確定済みの開始地点（描画用）。ドラッグ中の途中値は内部で持つ。
+  final InitialPoseMission? initialPose;
+
+  /// 開始地点の確定通知。位置タップ＋ドラッグ方向からyawを決めて返す。
+  final ValueChanged<InitialPoseMission>? onPoseChanged;
+
   /// フリーハンド描画中か否かの報告。通知バーの囲み促進ヒントの
   /// 表示条件（未選択かつ描画中でない）の後半に使う。
   final ValueChanged<bool>? onSelectionIdleChanged;
@@ -25,6 +44,10 @@ class MapSelectionArea extends StatefulWidget {
     required this.onChanged,
     this.onLog,
     this.sendCompleted = false,
+    this.mapConfig,
+    this.editMode = MapEditMode.polygon,
+    this.initialPose,
+    this.onPoseChanged,
     this.onSelectionIdleChanged,
   });
 
@@ -34,6 +57,7 @@ class MapSelectionArea extends StatefulWidget {
 
 class _MapSelectionAreaState extends State<MapSelectionArea> {
   MapSelectionController get _selectionController => widget.controller;
+  MapConfig? get _mapConfig => widget.mapConfig;
   final TransformationController _mapTransformController =
       TransformationController();
   Offset? _lastFocalPoint;
@@ -41,12 +65,25 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
   bool _wasTransforming = false;
   final List<Offset> _freehandPath = [];
   Offset? _magnifierPosition;
+  Offset? _poseDragStart;
+  Offset? _poseDragCurrent;
+
+  bool get _poseMode => widget.editMode == MapEditMode.initialPose;
 
   @override
   void initState() {
     super.initState();
     // 初期状態（未選択・非描画）を親に伝える。build中の通知を避け次フレームで。
     WidgetsBinding.instance.addPostFrameCallback((_) => _reportIdle());
+  }
+
+  @override
+  void didUpdateWidget(covariant MapSelectionArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // マップ切り替え時はズームをリセットする。
+    if (oldWidget.mapConfig?.id != widget.mapConfig?.id) {
+      _mapTransformController.value = Matrix4.identity();
+    }
   }
 
   @override
@@ -60,6 +97,21 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
 
   void _emitSelection() {
     widget.onChanged(List<MapPoint>.from(_selectionController.points));
+  }
+
+  /// 開始地点モードのタップ＋ドラッグ確定。始点が位置、終点方向が向き。
+  /// ドラッグ不足時は向きを維持（初回は0）して位置だけ確定する。
+  void _confirmPose(Offset start, Offset end, Size mapSize) {
+    final origin = MapGeometry.fromLocal(start, mapSize, _mapConfig);
+    final double yaw;
+    if (InitialPoseController.isDragValid(start, end)) {
+      yaw = InitialPoseController.yawFromLocalDrag(start, end, mapSize);
+    } else {
+      yaw = widget.initialPose?.yaw ?? 0.0;
+    }
+    widget.onPoseChanged?.call(
+      InitialPoseMission(x: origin.x, y: origin.y, yaw: yaw),
+    );
   }
 
   Offset _toLocalMapPoint(Offset pointer, Size size, Offset mapOffset) {
@@ -79,9 +131,9 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
           constraints.maxWidth,
           constraints.hasBoundedHeight
               ? constraints.maxHeight
-              : MapGeometry.computeMapHeight(constraints.maxWidth),
+              : MapGeometry.computeMapHeight(constraints.maxWidth, _mapConfig),
         );
-        final mapSize = MapGeometry.fitWithin(availableSize);
+        final mapSize = MapGeometry.fitWithin(availableSize, _mapConfig);
 
         final mapOffset = Offset(
           (availableSize.width - mapSize.width) / 2,
@@ -97,13 +149,29 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
               _selectionController.selectionStart = null;
               _selectionController.activeHandleIndex = null;
               _freehandPath.clear();
+              _poseDragStart = null;
+              _poseDragCurrent = null;
+            } else if (_poseMode) {
+              final local = _toLocalMapPoint(
+                details.localFocalPoint,
+                mapSize,
+                mapOffset,
+              );
+              setState(() {
+                _poseDragStart = local;
+                _poseDragCurrent = local;
+              });
             } else {
               final local = _toLocalMapPoint(
                 details.localFocalPoint,
                 mapSize,
                 mapOffset,
               );
-              final hit = _selectionController.hitHandle(local, mapSize);
+              final hit = _selectionController.hitHandle(
+                local,
+                mapSize,
+                _mapConfig,
+              );
               if (_selectionController.points.length >= 4) {
                 if (hit != null) {
                   setState(() {
@@ -160,11 +228,17 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
               mapSize,
               mapOffset,
             );
+            if (_poseMode) {
+              if (_poseDragStart != null) {
+                setState(() => _poseDragCurrent = local);
+              }
+              return;
+            }
             if (_selectionController.activeHandleIndex != null &&
                 _selectionController.points.length == 4) {
               final next = List<MapPoint>.from(_selectionController.points);
               next[_selectionController.activeHandleIndex!] =
-                  MapGeometry.fromLocal(local, mapSize);
+                  MapGeometry.fromLocal(local, mapSize, _mapConfig);
               setState(() {
                 _selectionController.points = next;
                 _magnifierPosition = details.localFocalPoint;
@@ -183,12 +257,25 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
             _lastScale = 1.0;
             final wasTransforming = _wasTransforming;
             _wasTransforming = false;
+            if (_poseMode) {
+              final start = _poseDragStart;
+              final end = _poseDragCurrent;
+              setState(() {
+                _poseDragStart = null;
+                _poseDragCurrent = null;
+              });
+              if (!wasTransforming && start != null && end != null) {
+                _confirmPose(start, end, mapSize);
+              }
+              return;
+            }
             final wasDrawing = _selectionController.selectionStart != null;
             setState(() {
               if (!wasTransforming && wasDrawing) {
                 _selectionController.updateRectangleFromPath(
                   _freehandPath,
                   mapSize,
+                  _mapConfig,
                 );
               }
               _selectionController.selectionStart = null;
@@ -228,21 +315,25 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                             child: Stack(
                               children: [
                                 Positioned.fill(
-                                  child: Image.asset(
-                                    'assets/maps/rouka7.png',
-                                    fit: BoxFit.fill,
+                                  child: _mapImage(
+                                    _mapConfig?.assetPath ??
+                                        BuiltinMaps.gakuseigenkan.assetPath,
                                   ),
                                 ),
                                 Positioned.fill(
                                   child: CustomPaint(
                                     painter: _MapSelectionPainter(
                                       _selectionController.points,
+                                      mapConfig: _mapConfig,
                                       sendCompleted: widget.sendCompleted,
                                       activeHandle: _selectionController
                                           .activeHandleIndex,
                                       freehandPath: List<Offset>.from(
                                         _freehandPath,
                                       ),
+                                      initialPose: widget.initialPose,
+                                      poseDragStart: _poseDragStart,
+                                      poseDragCurrent: _poseDragCurrent,
                                     ),
                                   ),
                                 ),
@@ -266,6 +357,18 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
         );
       },
     );
+  }
+
+  Widget _mapImage(String path) {
+    final isAsset = path.startsWith('assets/');
+    Widget errorBuilder(
+      BuildContext context,
+      Object error,
+      StackTrace? trace,
+    ) => const Center(child: Text('地図画像を読み込めません'));
+    return isAsset
+        ? Image.asset(path, fit: BoxFit.fill, errorBuilder: errorBuilder)
+        : Image.file(File(path), fit: BoxFit.fill, errorBuilder: errorBuilder);
   }
 }
 
@@ -317,15 +420,23 @@ class _MapMagnifier extends StatelessWidget {
 
 class _MapSelectionPainter extends CustomPainter {
   final List<MapPoint> points;
+  final MapConfig? mapConfig;
   final bool sendCompleted;
   final int? activeHandle;
   final List<Offset> freehandPath;
+  final InitialPoseMission? initialPose;
+  final Offset? poseDragStart;
+  final Offset? poseDragCurrent;
 
   const _MapSelectionPainter(
     this.points, {
+    this.mapConfig,
     this.sendCompleted = false,
     this.activeHandle,
     this.freehandPath = const [],
+    this.initialPose,
+    this.poseDragStart,
+    this.poseDragCurrent,
   });
 
   @override
@@ -345,42 +456,116 @@ class _MapSelectionPainter extends CustomPainter {
           ..strokeJoin = StrokeJoin.round,
       );
     }
-    if (points.length < 2) return;
-
-    final path = Path();
-    for (int i = 0; i < points.length; i++) {
-      final point = MapGeometry.toScreenPoint(points[i], size);
-      if (i == 0) {
-        path.moveTo(point.dx, point.dy);
-      } else {
-        path.lineTo(point.dx, point.dy);
+    if (points.length >= 2) {
+      final path = Path();
+      for (int i = 0; i < points.length; i++) {
+        final point = MapGeometry.toScreenPoint(points[i], size, mapConfig);
+        if (i == 0) {
+          path.moveTo(point.dx, point.dy);
+        } else {
+          path.lineTo(point.dx, point.dy);
+        }
       }
+      if (points.length >= 3) path.close();
 
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = sendCompleted ? AppColors.completed : AppColors.selection
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+
+      for (int i = 0; i < points.length; i++) {
+        final point = MapGeometry.toScreenPoint(points[i], size, mapConfig);
+        final radius = i == activeHandle ? 7.0 : 5.0;
+        canvas.drawCircle(
+          point,
+          radius,
+          Paint()
+            ..color = i == activeHandle
+                ? AppColors.danger
+                : sendCompleted
+                ? AppColors.completed
+                : AppColors.selection,
+        );
+      }
     }
-    if (points.length >= 3) path.close();
 
-    canvas.drawPath(
-      path,
+    _paintInitialPose(canvas, size);
+  }
+
+  /// 開始地点マーカー（円＋向き矢印）を描く。ドラッグ中はプレビューを優先する。
+  void _paintInitialPose(Canvas canvas, Size size) {
+    final dragStart = poseDragStart;
+    final dragCurrent = poseDragCurrent;
+    if (dragStart != null && dragCurrent != null) {
+      final previewYaw =
+          InitialPoseController.isDragValid(dragStart, dragCurrent)
+          ? InitialPoseController.yawFromLocalDrag(dragStart, dragCurrent, size)
+          : null;
+      _drawPoseMarker(canvas, dragStart, previewYaw);
+      return;
+    }
+    final pose = initialPose;
+    if (pose == null) return;
+    _drawPoseMarker(
+      canvas,
+      MapGeometry.toScreenPoint(
+        MapPoint(x: pose.x, y: pose.y),
+        size,
+        mapConfig,
+      ),
+      pose.yaw,
+    );
+  }
+
+  /// 位置点に円、向きに矢印を描く。yawがnullなら円のみ（方向未確定）。
+  void _drawPoseMarker(Canvas canvas, Offset center, double? yaw) {
+    canvas.drawCircle(center, 7.0, Paint()..color = AppColors.onColor);
+    canvas.drawCircle(
+      center,
+      7.0,
       Paint()
-        ..color = sendCompleted ? AppColors.completed : AppColors.selection
+        ..color = AppColors.action
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+    if (yaw == null) return;
+    // 画面Yは下向きなのでsinの符号を反転させる。
+    final direction = Offset(math.cos(yaw), -math.sin(yaw));
+    const arrowLength = 36.0;
+    final tip = center + direction * arrowLength;
+    canvas.drawLine(
+      center,
+      tip,
+      Paint()
+        ..color = AppColors.action
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
+        ..strokeCap = StrokeCap.round,
     );
-
-    for (int i = 0; i < points.length; i++) {
-      final point = MapGeometry.toScreenPoint(points[i], size);
-      final radius = i == activeHandle ? 7.0 : 5.0;
-      canvas.drawCircle(
-        point,
-        radius,
+    const headLength = 10.0;
+    const headAngle = 0.5;
+    final baseAngle = math.atan2(direction.dy, direction.dx);
+    for (final sign in [1.0, -1.0]) {
+      final headEnd =
+          tip -
+          Offset(
+                math.cos(baseAngle + sign * headAngle),
+                math.sin(baseAngle + sign * headAngle),
+              ) *
+              headLength;
+      canvas.drawLine(
+        tip,
+        headEnd,
         Paint()
-          ..color = i == activeHandle
-              ? AppColors.danger
-              : sendCompleted
-              ? AppColors.completed
-              : AppColors.selection,
+          ..color = AppColors.action
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..strokeCap = StrokeCap.round,
       );
     }
   }
@@ -388,7 +573,13 @@ class _MapSelectionPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MapSelectionPainter oldDelegate) =>
       oldDelegate.points != points ||
+      oldDelegate.mapConfig?.id != mapConfig?.id ||
       oldDelegate.sendCompleted != sendCompleted ||
       oldDelegate.activeHandle != activeHandle ||
-      oldDelegate.freehandPath != freehandPath;
+      oldDelegate.freehandPath != freehandPath ||
+      oldDelegate.initialPose?.x != initialPose?.x ||
+      oldDelegate.initialPose?.y != initialPose?.y ||
+      oldDelegate.initialPose?.yaw != initialPose?.yaw ||
+      oldDelegate.poseDragStart != poseDragStart ||
+      oldDelegate.poseDragCurrent != poseDragCurrent;
 }

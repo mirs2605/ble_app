@@ -97,3 +97,7 @@ source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --packages-up-to mirs_pc_viewer --cmake-args -DBUILD_TESTING=OFF
 source install/setup.bash
 ```
+
+When you use the app's start-pose mode, the simulation gateway publishes a
+`geometry_msgs/msg/PoseWithCovarianceStamped` message to `/initialpose`, shown in
+RViz. This is a visualization/simulation input and does not move a robot.

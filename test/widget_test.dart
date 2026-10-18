@@ -3,12 +3,23 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mirs_ble_app/main.dart';
 import 'package:mirs_ble_app/models/cleaning_zone.dart';
+import 'package:mirs_ble_app/models/map_config.dart';
 import 'package:mirs_ble_app/models/map_geometry.dart';
 import 'package:mirs_ble_app/services/map_selection_controller.dart';
 import 'package:mirs_ble_app/services/ble_service.dart';
 import 'package:mirs_ble_app/services/permission_service.dart';
+import 'package:mirs_ble_app/services/map_config_repository.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
+  setUpAll(() async {
+    sqfliteFfiInit();
+    await MapConfigRepository.init(
+      factory: databaseFactoryFfi,
+      path: inMemoryDatabasePath,
+    );
+  });
+
   testWidgets('displays the BLE client screen', (tester) async {
     await tester.pumpWidget(const MirsBleApp());
 
@@ -33,8 +44,41 @@ void main() {
         {'x': 1.0, 'y': 1.0},
         {'x': 4.0, 'y': 1.0},
         {'x': 4.0, 'y': 3.0},
+        {'x': 1.0, 'y': 1.0},
       ],
     });
+  });
+
+  test('serializes a closed polygon ring', () {
+    const mission = CleaningZoneMission(
+      polygon: [
+        MapPoint(x: 1, y: 1),
+        MapPoint(x: 4, y: 1),
+        MapPoint(x: 4, y: 3),
+      ],
+    );
+
+    final polygon = (mission.toJson()['polygon'] as List)
+        .cast<Map<String, dynamic>>();
+    expect(polygon.length, 4);
+    expect(polygon.first, polygon.last);
+  });
+
+  test('accepts an already closed polygon without duplicating closure', () {
+    const mission = CleaningZoneMission(
+      polygon: [
+        MapPoint(x: 1, y: 1),
+        MapPoint(x: 4, y: 1),
+        MapPoint(x: 4, y: 3),
+        MapPoint(x: 1, y: 1),
+      ],
+    );
+
+    expect(mission.isValid, isTrue);
+    final polygon = (mission.toJson()['polygon'] as List)
+        .cast<Map<String, dynamic>>();
+    expect(polygon.length, 4);
+    expect(polygon.first, polygon.last);
   });
 
   test('rejects invalid points', () {
@@ -97,7 +141,10 @@ void main() {
       y: MapGeometry.originY + MapGeometry.heightMeters / 2,
     );
 
-    expect(MapGeometry.toScreenPoint(point, size), const Offset(280.5, 387.5));
+    // 浮動小数点の丸め(280.49999...)を許容するため誤差付き比較にする
+    final screen = MapGeometry.toScreenPoint(point, size);
+    expect(screen.dx, moreOrLessEquals(280.5, epsilon: 0.000001));
+    expect(screen.dy, moreOrLessEquals(387.5, epsilon: 0.000001));
     expect(
       MapGeometry.fromLocal(const Offset(561, 775), size),
       const MapPoint(
@@ -117,6 +164,36 @@ void main() {
       );
 
     expect(controller.hitHandle(const Offset(520, 700), size), 2);
+  });
+
+  test('uses selected map metadata for coordinate conversion and handles', () {
+    const map = MapConfig(
+      id: 10,
+      name: 'test',
+      assetPath: 'assets/maps/test.png',
+      resolution: 0.1,
+      originX: 10,
+      originY: -2,
+      imageWidth: 100,
+      imageHeight: 50,
+    );
+    const size = Size(200, 100);
+    const point = MapPoint(x: 15, y: 0.5);
+
+    expect(MapGeometry.toScreenPoint(point, size, map), const Offset(100, 50));
+    expect(
+      MapGeometry.fromLocal(const Offset(200, 100), size, map),
+      const MapPoint(x: 20, y: -2),
+    );
+
+    final selection = MapSelectionController()
+      ..points = MapGeometry.rectangleFrom(
+        const Offset(50, 20),
+        const Offset(150, 80),
+        size,
+        map,
+      );
+    expect(selection.hitHandle(const Offset(150, 80), size, map), 2);
   });
 
   test('creates a four-corner polygon that follows a freehand path', () {
@@ -145,13 +222,14 @@ void main() {
   });
 
   test('fits the map inside the available area without distortion', () {
+    // 期待値は現行マップ画像(2857x1677, aspect=2857/1677)から算出
     final wideArea = MapGeometry.fitWithin(const Size(1000, 600));
-    expect(wideArea.width, closeTo(434.3225806451613, 0.000001));
-    expect(wideArea.height, closeTo(600, 0.000001));
+    expect(wideArea.width, closeTo(1000, 0.000001));
+    expect(wideArea.height, closeTo(586.9793489674483, 0.000001));
 
     final tallArea = MapGeometry.fitWithin(const Size(400, 1000));
     expect(tallArea.width, closeTo(400, 0.000001));
-    expect(tallArea.height, closeTo(552.5846702310463, 0.000001));
+    expect(tallArea.height, closeTo(234.79173958697933, 0.000001));
   });
 
   test('only matches the configured BLE service UUID', () {

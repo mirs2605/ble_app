@@ -31,6 +31,13 @@ Visualization Manager:
         Durability Policy: Volatile
       Color: 255; 190; 35
       Line Width: 0.04
+    - Class: rviz_default_plugins/PoseWithCovariance
+      Name: Initial pose
+      Enabled: true
+      Topic:
+        Value: /initialpose
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
   Enabled: true
   Name: root
   Tools:

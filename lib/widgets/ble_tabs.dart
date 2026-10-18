@@ -3,16 +3,20 @@ import 'package:flutter/material.dart';
 
 import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
+import '../models/initial_pose.dart';
+import '../models/map_config.dart';
+import '../models/map_edit_mode.dart';
 import '../models/send_button_state.dart';
 import '../services/ble_service.dart';
 import '../services/map_selection_controller.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_strings.dart';
 import 'ble_status_indicator.dart';
 import 'status_notification_bar.dart';
 import 'floating_action_controls.dart';
 import 'map_selection_area.dart';
+import 'map_management_button.dart';
 import 'polygon_form.dart';
-import '../theme/app_colors.dart';
 
 class BleHomeTab extends StatelessWidget {
   final MapSelectionController mapSelection;
@@ -31,6 +35,20 @@ class BleHomeTab extends StatelessWidget {
   final bool canSend;
   final SendButtonState sendButtonState;
 
+  /// 開始地点モード関連の配線。
+  final MapEditMode editMode;
+  final InitialPoseMission? initialPose;
+  final ValueChanged<InitialPoseMission> onPoseChanged;
+  final VoidCallback onPoseModePressed;
+  final VoidCallback onClearPose;
+  final VoidCallback onSendPose;
+  final bool canSendPose;
+  final MapConfig activeMap;
+  final List<MapConfig> maps;
+  final Future<void> Function(MapConfig) onMapSelected;
+  final Future<void> Function(MapConfig) onMapAdded;
+  final Future<void> Function(MapConfig) onMapDeleted;
+
   const BleHomeTab({
     super.key,
     required this.mapSelection,
@@ -48,19 +66,49 @@ class BleHomeTab extends StatelessWidget {
     required this.canSend,
     required this.sendButtonState,
     this.onSelectionIdleChanged,
+    this.editMode = MapEditMode.polygon,
+    this.initialPose,
+    required this.onPoseChanged,
+    required this.onPoseModePressed,
+    required this.onClearPose,
+    required this.onSendPose,
+    required this.canSendPose,
+    required this.activeMap,
+    required this.maps,
+    required this.onMapSelected,
+    required this.onMapAdded,
+    required this.onMapDeleted,
   });
 
   @override
   Widget build(BuildContext context) {
+    final poseMode = editMode == MapEditMode.initialPose;
     return Stack(
       fit: StackFit.expand,
       children: [
         MapSelectionArea(
           controller: mapSelection,
+          mapConfig: activeMap,
           onChanged: onMapChanged,
           onLog: onLog,
           sendCompleted: sendCompleted,
           onSelectionIdleChanged: onSelectionIdleChanged,
+          editMode: editMode,
+          initialPose: initialPose,
+          onPoseChanged: onPoseChanged,
+        ),
+        Positioned(
+          top: 64,
+          right: 12,
+          child: SafeArea(
+            child: MapManagementButton(
+              activeMap: activeMap,
+              maps: maps,
+              onSelect: onMapSelected,
+              onAdd: onMapAdded,
+              onDelete: onMapDeleted,
+            ),
+          ),
         ),
         _TopLeftStatus(
           status: status,
@@ -68,18 +116,26 @@ class BleHomeTab extends StatelessWidget {
           notice: notice,
           onPressed: onStatusPressed,
           trailing: permissionsPermanentlyDenied
-              ? PermissionSettingsButton(
-                  onPressed: onPermissionSettings,
-                )
+              ? PermissionSettingsButton(onPressed: onPermissionSettings)
               : null,
         ),
         MapSelectionActions(
-          showClear: mapSelection.points.length >= 4,
-          showSend: mapSelection.points.length >= 4,
-          canSend: canSend,
+          showClear: poseMode
+              ? initialPose != null
+              : mapSelection.points.length >= 4,
+          showSend: poseMode
+              ? initialPose != null
+              : mapSelection.points.length >= 4,
+          canSend: poseMode ? canSendPose : canSend,
           sendButtonState: sendButtonState,
-          onClear: onClearSelection,
-          onSend: onSend,
+          onClear: poseMode ? onClearPose : onClearSelection,
+          onSend: poseMode ? onSendPose : onSend,
+          clearTooltip: poseMode
+              ? AppStrings.clearPoseTooltip
+              : AppStrings.clearTooltip,
+          showPoseMode: true,
+          poseModeActive: poseMode,
+          onPoseMode: onPoseModePressed,
         ),
       ],
     );
@@ -96,6 +152,8 @@ class BleValuesTab extends StatefulWidget {
   final List<MapPoint> selectedMapPoints;
   final ValueChanged<List<MapPoint>> onSendPolygon;
   final bool Function(List<MapPoint> polygon) canSendPolygon;
+  final ValueChanged<InitialPoseMission> onSendInitialPose;
+  final bool Function(InitialPoseMission? pose) canSendInitialPose;
   final VoidCallback onStatusPressed;
   final SendButtonState sendButtonState;
 
@@ -107,6 +165,8 @@ class BleValuesTab extends StatefulWidget {
     required this.selectedMapPoints,
     required this.onSendPolygon,
     required this.canSendPolygon,
+    required this.onSendInitialPose,
+    required this.canSendInitialPose,
     required this.onStatusPressed,
     required this.sendButtonState,
   });
@@ -116,28 +176,44 @@ class BleValuesTab extends StatefulWidget {
 }
 
 class _BleValuesTabState extends State<BleValuesTab> {
-  static const _defaults = [
+  static const _polygonDefaults = [
     [1.0, 1.0],
     [4.0, 1.0],
     [4.0, 3.0],
     [1.0, 3.0],
   ];
 
+  // --- 清掃範囲フォーム ---
   late final List<TextEditingController> _xControllers;
   late final List<TextEditingController> _yControllers;
+
+  // --- 開始地点フォーム ---
+  late final TextEditingController _poseXController;
+  late final TextEditingController _poseYController;
+  late final TextEditingController _poseYawController;
 
   @override
   void initState() {
     super.initState();
     _xControllers = List.generate(
       4,
-      (i) => TextEditingController(text: _defaults[i][0].toString()),
+      (i) => TextEditingController(text: _polygonDefaults[i][0].toString()),
     );
     _yControllers = List.generate(
       4,
-      (i) => TextEditingController(text: _defaults[i][1].toString()),
+      (i) => TextEditingController(text: _polygonDefaults[i][1].toString()),
     );
+    _poseXController = TextEditingController(text: '0.0');
+    _poseYController = TextEditingController(text: '0.0');
+    _poseYawController = TextEditingController(text: '0.0');
+
+    // フォーム変更時に send ボタンの活性状態を再評価する。
+    for (final c in [_poseXController, _poseYController, _poseYawController]) {
+      c.addListener(_onPoseFormChanged);
+    }
   }
+
+  void _onPoseFormChanged() => setState(() {});
 
   @override
   void didUpdateWidget(covariant BleValuesTab oldWidget) {
@@ -146,39 +222,55 @@ class _BleValuesTabState extends State<BleValuesTab> {
     if (!listEquals(oldWidget.selectedMapPoints, widget.selectedMapPoints) &&
         widget.selectedMapPoints.length == 4) {
       for (int i = 0; i < 4; i++) {
-        _xControllers[i].text =
-            widget.selectedMapPoints[i].x.toStringAsFixed(2);
-        _yControllers[i].text =
-            widget.selectedMapPoints[i].y.toStringAsFixed(2);
+        _xControllers[i].text = widget.selectedMapPoints[i].x.toStringAsFixed(
+          2,
+        );
+        _yControllers[i].text = widget.selectedMapPoints[i].y.toStringAsFixed(
+          2,
+        );
       }
     }
   }
 
   @override
   void dispose() {
-    for (final controller in [..._xControllers, ..._yControllers]) {
-      controller.dispose();
+    for (final c in [..._xControllers, ..._yControllers]) {
+      c.dispose();
     }
+    _poseXController.removeListener(_onPoseFormChanged);
+    _poseYController.removeListener(_onPoseFormChanged);
+    _poseYawController.removeListener(_onPoseFormChanged);
+    _poseXController.dispose();
+    _poseYController.dispose();
+    _poseYawController.dispose();
     super.dispose();
   }
 
-  /// フォーム値を多角形にパースする。1つでも不正なら空リストを返す。
+  /// 清掃範囲フォーム値を多角形にパースする。1つでも不正なら空リストを返す。
   List<MapPoint> _readPolygon() {
     final polygon = <MapPoint>[];
     for (int i = 0; i < 4; i++) {
       final x = double.tryParse(_xControllers[i].text);
       final y = double.tryParse(_yControllers[i].text);
-      if (x == null || y == null) {
-        return <MapPoint>[];
-      }
+      if (x == null || y == null) return <MapPoint>[];
       polygon.add(MapPoint(x: x, y: y));
     }
     return polygon;
   }
 
+  /// 開始地点フォーム値をパースする。不正な場合は null を返す。
+  InitialPoseMission? _readInitialPose() {
+    final x = double.tryParse(_poseXController.text);
+    final y = double.tryParse(_poseYController.text);
+    final yaw = double.tryParse(_poseYawController.text);
+    if (x == null || y == null || yaw == null) return null;
+    return InitialPoseMission(x: x, y: y, yaw: yaw);
+  }
+
   @override
   Widget build(BuildContext context) {
     final polygon = _readPolygon();
+    final pose = _readInitialPose();
     return Stack(
       children: [
         SafeArea(
@@ -189,6 +281,32 @@ class _BleValuesTabState extends State<BleValuesTab> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 56),
+
+                  // ---- 開始地点セクション ----
+                  const Text(
+                    AppStrings.initialPoseTitle,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  _InitialPoseForm(
+                    xController: _poseXController,
+                    yController: _poseYController,
+                    yawController: _poseYawController,
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed: widget.canSendInitialPose(pose)
+                        ? () => widget.onSendInitialPose(pose!)
+                        : null,
+                    icon: const Icon(Icons.my_location),
+                    label: const Text('開始地点を送信'),
+                  ),
+
+                  const SizedBox(height: 24),
+                  const Divider(),
+                  const SizedBox(height: 8),
+
+                  // ---- 清掃範囲セクション ----
                   const Text(
                     AppStrings.cleaningAreaTitle,
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -198,6 +316,8 @@ class _BleValuesTabState extends State<BleValuesTab> {
                     xControllers: _xControllers,
                     yControllers: _yControllers,
                   ),
+                  // 清掃範囲の送信はBottomSendActionのFABで行うため余白を確保。
+                  const SizedBox(height: 80),
                 ],
               ),
             ),
@@ -216,6 +336,52 @@ class _BleValuesTabState extends State<BleValuesTab> {
           state: widget.sendButtonState,
         ),
       ],
+    );
+  }
+}
+
+/// 開始地点（x / y / yaw）の入力フォーム。
+class _InitialPoseForm extends StatelessWidget {
+  final TextEditingController xController;
+  final TextEditingController yController;
+  final TextEditingController yawController;
+
+  const _InitialPoseForm({
+    required this.xController,
+    required this.yController,
+    required this.yawController,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: _coordField(xController, 'X (m)')),
+            const SizedBox(width: 8),
+            Expanded(child: _coordField(yController, 'Y (m)')),
+            const SizedBox(width: 8),
+            Expanded(child: _coordField(yawController, 'Yaw (rad)')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _coordField(TextEditingController controller, String label) {
+    return TextFormField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      ),
+      keyboardType: const TextInputType.numberWithOptions(
+        decimal: true,
+        signed: true,
+      ),
     );
   }
 }
@@ -247,8 +413,10 @@ class BleLogsTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 56),
-                const Text(AppStrings.logsTitle,
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  AppStrings.logsTitle,
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 Expanded(
                   child: Container(
@@ -324,10 +492,7 @@ class _TopLeftStatus extends StatelessWidget {
               fit: FlexFit.loose,
               child: StatusNotificationBar.notice(notice),
             ),
-            if (trailing != null) ...[
-              const SizedBox(width: 8),
-              trailing,
-            ],
+            if (trailing != null) ...[const SizedBox(width: 8), trailing],
           ],
         ),
       ),
