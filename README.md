@@ -43,3 +43,6 @@ releaseビルドはdebug署名へフォールバックしません。正式配�
 `android/key.properties.example` を `android/key.properties` としてコピーし、
 実際のkeystore情報を設定してください。`key.properties` とkeystoreファイルは
 リポジトリへ追加しないでください。
+# ROS 2 PC Preview
+
+スマートフォンから送った清掃範囲をPCで表示する手順は [ros2_ws/README.md](ros2_ws/README.md) を参照してください。

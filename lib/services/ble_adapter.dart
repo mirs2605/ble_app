@@ -92,3 +92,8 @@ abstract class BleAdapter {
 
   Future<void> dispose();
 }
+
+/// Optional response support for write-only BLE servers.
+abstract interface class BleResponseCapability {
+  bool get hasReadableResponse;
+}
