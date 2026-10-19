@@ -49,9 +49,11 @@ void main() {
       buildTab(
         selection: const [
           MapPoint(x: 2, y: 2),
-          MapPoint(x: 5, y: 2),
+          MapPoint(x: 3.5, y: 2),
+          MapPoint(x: 5, y: 3),
           MapPoint(x: 5, y: 4),
-          MapPoint(x: 2, y: 4),
+          MapPoint(x: 3.5, y: 4),
+          MapPoint(x: 2, y: 3),
         ],
       ),
     );
@@ -68,9 +70,7 @@ void main() {
 
   testWidgets('開始地点フォームの値がonSendInitialPoseへ渡される', (tester) async {
     InitialPoseMission? received;
-    await tester.pumpWidget(
-      buildTab(onSendInitialPose: (p) => received = p),
-    );
+    await tester.pumpWidget(buildTab(onSendInitialPose: (p) => received = p));
 
     // デフォルト値 0.0 / 0.0 / 0.0 のまま送信ボタンをタップ。
     await tester.tap(find.byIcon(Icons.my_location));

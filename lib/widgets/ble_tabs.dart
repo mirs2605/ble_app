@@ -120,12 +120,8 @@ class BleHomeTab extends StatelessWidget {
               : null,
         ),
         MapSelectionActions(
-          showClear: poseMode
-              ? initialPose != null
-              : mapSelection.points.length >= 4,
-          showSend: poseMode
-              ? initialPose != null
-              : mapSelection.points.length >= 4,
+          showClear: poseMode ? initialPose != null : mapSelection.hasSelection,
+          showSend: poseMode ? initialPose != null : mapSelection.hasSelection,
           canSend: poseMode ? canSendPose : canSend,
           sendButtonState: sendButtonState,
           onClear: poseMode ? onClearPose : onClearSelection,
@@ -178,9 +174,11 @@ class BleValuesTab extends StatefulWidget {
 class _BleValuesTabState extends State<BleValuesTab> {
   static const _polygonDefaults = [
     [1.0, 1.0],
-    [4.0, 1.0],
+    [2.5, 1.0],
+    [4.0, 2.0],
     [4.0, 3.0],
-    [1.0, 3.0],
+    [2.5, 3.0],
+    [1.0, 2.0],
   ];
 
   // --- 清掃範囲フォーム ---
@@ -196,11 +194,11 @@ class _BleValuesTabState extends State<BleValuesTab> {
   void initState() {
     super.initState();
     _xControllers = List.generate(
-      4,
+      _polygonDefaults.length,
       (i) => TextEditingController(text: _polygonDefaults[i][0].toString()),
     );
     _yControllers = List.generate(
-      4,
+      _polygonDefaults.length,
       (i) => TextEditingController(text: _polygonDefaults[i][1].toString()),
     );
     _poseXController = TextEditingController(text: '0.0');
@@ -218,10 +216,10 @@ class _BleValuesTabState extends State<BleValuesTab> {
   @override
   void didUpdateWidget(covariant BleValuesTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 地図タブでの選択をフォームへ反映する（4点確定時のみ）。
+    // 地図タブでの選択を6点フォームへ反映する。
     if (!listEquals(oldWidget.selectedMapPoints, widget.selectedMapPoints) &&
-        widget.selectedMapPoints.length == 4) {
-      for (int i = 0; i < 4; i++) {
+        widget.selectedMapPoints.length == _xControllers.length) {
+      for (int i = 0; i < _xControllers.length; i++) {
         _xControllers[i].text = widget.selectedMapPoints[i].x.toStringAsFixed(
           2,
         );
@@ -249,7 +247,7 @@ class _BleValuesTabState extends State<BleValuesTab> {
   /// 清掃範囲フォーム値を多角形にパースする。1つでも不正なら空リストを返す。
   List<MapPoint> _readPolygon() {
     final polygon = <MapPoint>[];
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < _xControllers.length; i++) {
       final x = double.tryParse(_xControllers[i].text);
       final y = double.tryParse(_yControllers[i].text);
       if (x == null || y == null) return <MapPoint>[];
