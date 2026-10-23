@@ -18,9 +18,9 @@ models ─→ models のみ
 
 | 変更するもの | 影響を受けるもの・確認すること |
 |---|---|
-| `BleConnection` のインターフェース | `BleService`、`PcSimulationConnection`、`FakeBleConnection`（`test/ble_home_controller_test.dart`） |
+| `BleConnection` のインターフェース | `BleService`、`FakeBleConnection`（`test/ble_home_controller_test.dart`） |
 | `BleAdapter` | `FlutterBluePlusAdapter`、`ble_service_test.dart` の Fake |
-| 送信 JSON（`toJson` / `type` / 閉路形式） | ロボット側の `ble_server`（別リポジトリ）、`http_gateway.py`。**サーバー側を先に更新してから反映する**（backlog #13） |
+| 送信 JSON（`toJson` / `type` / 閉路形式） | ロボット側の `ble_server`（別リポジトリ）。**サーバー側を先に更新してから反映する**（backlog #13） |
 | UUID（`BleUuids`） | `ble_server` の GATT 設定、README の記載 |
 | 地図定数（`BuiltinMaps` / `MapGeometry`） | `test/widget_test.dart` の期待値を再計算する（AGENTS.md） |
 | `MapConfig` のフィールド | `map_config_repository.dart` の DB スキーマ（`_dbVersion = 1`。`onUpgrade` はまだないため、スキーマを変えるときは追加が必要）、`map_management_button.dart` |
@@ -31,7 +31,7 @@ models ─→ models のみ
 
 - 実行時: flutter_blue_plus（BLE）、permission_handler、sqflite、path_provider、image_picker、vector_math。
 - テスト: flutter_test、sqflite_common_ffi。
-- ROS 側: ROS 2 Jazzy、OpenNav Coverage（`ros2_ws/opennav_coverage.repos`）、Fields2Cover。
+- ロボット側: `ble_server`（mirs2605/ble_server。BLE で受信して ROS 2 に publish する）。
 - 未確認: backlog が参照している `ws/TODO.md` はこのリポジトリの外にある。
 
 ## 注意点

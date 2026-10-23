@@ -4,9 +4,8 @@
 
 ## 概要
 
-- MIRS ロボットへ清掃範囲（6点ポリゴン）と開始地点を送る Flutter アプリ。
-- 送信経路は2つ: 実機 BLE（`BleService`）／PC シミュレーション HTTP（`--dart-define=SIMULATION_MODE=true`）。
-- `ros2_ws/` は PC 側の ROS 2 プレビュー（Python）。Flutter の CI 対象外。
+- MIRS ロボットへ清掃範囲（四角形・4点）と開始地点を BLE で送る Flutter アプリ。
+- 送信は `BleService` が担い、ロボット側の `ble_server`（別リポジトリ）が受信する。
 
 ## ドキュメントの入口
 
