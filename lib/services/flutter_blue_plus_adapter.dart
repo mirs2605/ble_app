@@ -8,7 +8,7 @@ import 'ble_protocol.dart';
 
 /// [BleAdapter] の実機実装。flutter_blue_plusへの依存はこのファイルに閉じる。
 /// `dart:io` は使わず、プラットフォーム分岐は [defaultTargetPlatform] で行う。
-class FlutterBluePlusAdapter implements BleAdapter, BleResponseCapability {
+class FlutterBluePlusAdapter implements BleAdapter {
   BluetoothDevice? _device;
   BluetoothCharacteristic? _missionChar;
   BluetoothCharacteristic? _responseChar;
