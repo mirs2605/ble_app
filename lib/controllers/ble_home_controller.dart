@@ -4,13 +4,10 @@ import 'package:flutter/widgets.dart';
 
 import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
-import '../models/initial_pose.dart';
 import '../models/map_config.dart';
-import '../models/map_edit_mode.dart';
 import '../models/send_button_state.dart';
 import '../services/ble_connection.dart';
 import '../services/ble_service.dart';
-import '../services/initial_pose_controller.dart';
 import '../services/map_config_repository.dart';
 import '../services/map_selection_controller.dart';
 import '../services/permission_gateway.dart';
@@ -58,12 +55,6 @@ class BleHomeController extends ChangeNotifier {
   /// 直接操作し、確定時にonChangedで通知する（値のミラーは持たない）。
   final MapSelectionController mapSelection = MapSelectionController();
 
-  /// 開始地点の確定値ホルダー。ドラッグ中の途中状態はMapSelectionAreaが持つ。
-  final InitialPoseController poseSelection = InitialPoseController();
-
-  /// 地図タブの編集モード（範囲選択／開始地点指定）。
-  MapEditMode editMode = MapEditMode.polygon;
-
   /// フリーハンド描画中でないこと。MapSelectionAreaが報告する。
   /// ヒント表示条件（未選択かつ描画中でない）の後半を担う。
   bool _selectionIdle = true;
@@ -82,19 +73,13 @@ class BleHomeController extends ChangeNotifier {
   /// 登録済みマップ一覧。
   List<MapConfig> get allMaps => List.unmodifiable(_allMaps);
 
-  /// 表示中の独立通知。一時通知（3秒）を優先し、なければモード別のヒント。
+  /// 表示中の独立通知。一時通知（3秒）を優先し、なければ囲み促進のヒント。
   /// ヒント条件は従来の画面下表示と同一：未選択かつ描画中でないこと。
   AppNotice? get activeNotice {
-    final hint = _idleHint;
+    final hint = _selectionIdle && mapSelection.points.isEmpty
+        ? AppNotice.encloseRange
+        : null;
     return _noticeBoard.value ?? hint;
-  }
-
-  AppNotice? get _idleHint {
-    if (!_selectionIdle) return null;
-    if (editMode == MapEditMode.initialPose) {
-      return poseSelection.hasPose ? null : AppNotice.specifyPose;
-    }
-    return mapSelection.points.isEmpty ? AppNotice.encloseRange : null;
   }
 
   bool get sendCompleted => _sendTracker.sendCompleted;
@@ -129,7 +114,6 @@ class BleHomeController extends ChangeNotifier {
     _activeMapConfig = config;
     // マップ切り替え時は選択をリセットする。
     clearSelection();
-    clearInitialPose();
     notifyListeners();
   }
 
@@ -142,7 +126,6 @@ class BleHomeController extends ChangeNotifier {
     _activeMapConfig = saved;
     _allMaps = await _mapRepo.allMaps();
     clearSelection();
-    clearInitialPose();
     notifyListeners();
   }
 
@@ -178,57 +161,6 @@ class BleHomeController extends ChangeNotifier {
     mapSelection.clear();
     _sendTracker.resetProgress();
     notifyListeners();
-  }
-
-  /// 開始地点モードに入る。範囲選択の描画途中状態は破棄しない。
-  void enterPoseMode() {
-    if (_isDisposed || editMode == MapEditMode.initialPose) return;
-    editMode = MapEditMode.initialPose;
-    notifyListeners();
-  }
-
-  /// 範囲選択モードに戻る。
-  void exitPoseMode() {
-    if (_isDisposed || editMode == MapEditMode.polygon) return;
-    editMode = MapEditMode.polygon;
-    notifyListeners();
-  }
-
-  /// 地図上のタップ＋ドラッグ確定結果を保持する。
-  void setInitialPose(InitialPoseMission pose) {
-    poseSelection.pose = pose;
-    _sendTracker.resetProgress();
-    addLog(
-      '📍 ${AppStrings.poseSet} (${pose.x.toStringAsFixed(2)}, '
-      '${pose.y.toStringAsFixed(2)}, '
-      '${pose.yawDegrees.toStringAsFixed(0)}°)',
-    );
-    notifyListeners();
-  }
-
-  void clearInitialPose() {
-    poseSelection.clear();
-    _sendTracker.resetProgress();
-    notifyListeners();
-  }
-
-  InitialPoseMission? get selectedInitialPose => poseSelection.pose;
-
-  bool get canSendSelectedPose =>
-      _status == BleStatus.connected &&
-      !_sendTracker.isSending &&
-      poseSelection.pose != null &&
-      poseSelection.pose!.isValid;
-
-  /// 地図タブ用。指定済みの開始地点を送信する。
-  Future<void> sendPosePressed() async {
-    final pose = poseSelection.pose;
-    if (pose == null) {
-      addLog('❌ ${AppStrings.specifyPose}');
-      notifyNotice(AppNotice.specifyPose);
-      return;
-    }
-    await sendInitialPose(pose);
   }
 
   /// MapSelectionAreaからの描画状態報告を受け取る。
@@ -300,35 +232,6 @@ class BleHomeController extends ChangeNotifier {
   /// 送信ボタン活性条件。数値タブはフォーム値で判定する。
   bool canSendPolygon(List<MapPoint> polygon) =>
       _status == BleStatus.connected && _sendTracker.canSend(polygon);
-
-  /// 開始地点を送信する。不正な値は送信せず通知を出す。
-  Future<void> sendInitialPose(InitialPoseMission pose) async {
-    if (!pose.isValid) {
-      addLog('❌ ${AppStrings.invalidInitialPose}');
-      notifyNotice(AppNotice.invalidInitialPose);
-      return;
-    }
-
-    _sendTracker.beginSend();
-    notifyListeners();
-    final sent = await _connection.sendInitialPose(pose);
-    if (_isDisposed) return;
-    if (sent) {
-      _sendTracker.succeed([]);
-      notifyNotice(AppNotice.sendDone);
-    } else {
-      _sendTracker.failSend();
-      notifyNotice(AppNotice.sendFailed);
-    }
-    notifyListeners();
-  }
-
-  /// 開始地点の送信ボタン活性条件。
-  bool canSendInitialPose(InitialPoseMission? pose) =>
-      _status == BleStatus.connected &&
-      !_sendTracker.isSending &&
-      pose != null &&
-      pose.isValid;
 
   Future<void> openPermissionSettings() async {
     final opened = await _permissions.openSettings();

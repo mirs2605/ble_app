@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mirs_ble_app/controllers/ble_home_controller.dart';
 import 'package:mirs_ble_app/models/app_notice.dart';
 import 'package:mirs_ble_app/models/cleaning_zone.dart';
-import 'package:mirs_ble_app/models/initial_pose.dart';
 import 'package:mirs_ble_app/models/map_config.dart';
 import 'package:mirs_ble_app/models/send_button_state.dart';
 import 'package:mirs_ble_app/services/ble_connection.dart';
@@ -27,7 +26,6 @@ class FakeBleConnection implements BleConnection {
   int startAutoCalls = 0;
   int scanCalls = 0;
   int sendCalls = 0;
-  int sendPoseCalls = 0;
   int disposeCalls = 0;
   bool sendResult = true;
 
@@ -45,12 +43,6 @@ class FakeBleConnection implements BleConnection {
   @override
   Future<bool> sendCleaningZone(CleaningZoneMission zone) async {
     sendCalls++;
-    return sendResult;
-  }
-
-  @override
-  Future<bool> sendInitialPose(InitialPoseMission pose) async {
-    sendPoseCalls++;
     return sendResult;
   }
 
@@ -373,84 +365,7 @@ void main() {
     expect(controller.activeNotice, AppNotice.encloseRange);
   });
 
-  test('開始地点モードでヒントが切り替わる', () async {
-    final controller = buildController();
-    addTearDown(controller.dispose);
-    await flushAsync();
-    controller.clearNotification();
-
-    controller.enterPoseMode();
-    expect(controller.activeNotice, AppNotice.specifyPose);
-
-    controller.setInitialPose(
-      const InitialPoseMission(x: 1.0, y: 2.0, yaw: 0.5),
-    );
-    expect(controller.activeNotice, isNull);
-
-    controller.exitPoseMode();
-    expect(controller.activeNotice, AppNotice.encloseRange);
-  });
-
-  test('開始地点モードへの出入りは冪等である', () async {
-    final controller = buildController();
-    addTearDown(controller.dispose);
-    await flushAsync();
-    controller.clearNotification();
-
-    controller.exitPoseMode();
-    controller.enterPoseMode();
-    controller.enterPoseMode();
-    expect(controller.activeNotice, AppNotice.specifyPose);
-  });
-
-  test('指定済みの開始地点を送信できる', () async {
-    final conn = FakeBleConnection(onLog: (_) {}, onStatusChanged: (_) {});
-    final controller = buildController(connection: conn);
-    addTearDown(controller.dispose);
-    await flushAsync();
-    controller.clearNotification();
-    conn.emit(BleStatus.connected);
-
-    controller.setInitialPose(
-      const InitialPoseMission(x: 1.0, y: 2.0, yaw: 0.0),
-    );
-    expect(controller.canSendSelectedPose, isTrue);
-    await controller.sendPosePressed();
-
-    expect(conn.sendPoseCalls, 1);
-    expect(controller.activeNotice, AppNotice.sendDone);
-  });
-
-  test('開始地点なしの送信は通知のみで送信しない', () async {
-    final conn = FakeBleConnection(onLog: (_) {}, onStatusChanged: (_) {});
-    final controller = buildController(connection: conn);
-    addTearDown(controller.dispose);
-    await flushAsync();
-    controller.clearNotification();
-
-    await controller.sendPosePressed();
-
-    expect(conn.sendPoseCalls, 0);
-    expect(controller.activeNotice, AppNotice.specifyPose);
-  });
-
-  test('開始地点の削除でヒントに戻る', () async {
-    final controller = buildController();
-    addTearDown(controller.dispose);
-    await flushAsync();
-    controller.clearNotification();
-    controller.enterPoseMode();
-
-    controller.setInitialPose(
-      const InitialPoseMission(x: 1.0, y: 2.0, yaw: 0.0),
-    );
-    expect(controller.activeNotice, isNull);
-
-    controller.clearInitialPose();
-    expect(controller.activeNotice, AppNotice.specifyPose);
-  });
-
-  test('地図切替で選択範囲と開始地点を破棄する', () async {
+  test('地図切替で選択範囲を破棄する', () async {
     final controller = buildController();
     addTearDown(controller.dispose);
     await flushAsync();
@@ -461,7 +376,6 @@ void main() {
       MapPoint(x: 4, y: 3),
       MapPoint(x: 1, y: 3),
     ]);
-    controller.setInitialPose(const InitialPoseMission(x: 1, y: 2, yaw: 0));
     final otherMap = controller.allMaps.firstWhere(
       (map) => map.id != controller.activeMapConfig.id,
     );
@@ -470,7 +384,6 @@ void main() {
 
     expect(controller.activeMapConfig, otherMap);
     expect(controller.selectedMapPoints, isEmpty);
-    expect(controller.selectedInitialPose, isNull);
     await MapConfigRepository.instance.setActiveMap(
       controller.allMaps
           .firstWhere((map) => map.name == BuiltinMaps.gakuseigenkan.name)

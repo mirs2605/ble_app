@@ -4,7 +4,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../models/cleaning_zone.dart';
-import '../models/initial_pose.dart';
 import 'ble_adapter.dart';
 import 'ble_connection.dart';
 import 'flutter_blue_plus_adapter.dart';
@@ -229,15 +228,6 @@ class BleService implements BleConnection {
       return false;
     }
     return _sendJson(zone.toJson(), label: '清掃範囲');
-  }
-
-  @override
-  Future<bool> sendInitialPose(InitialPoseMission pose) async {
-    if (!pose.isValid) {
-      _log('❌ 開始地点が不正です。');
-      return false;
-    }
-    return _sendJson(pose.toJson(), label: '開始地点');
   }
 
   /// JSON化可能なオブジェクトを改行区切りでBLE送信する共通実装。

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/cleaning_zone.dart';
-import '../models/initial_pose.dart';
 import 'ble_connection.dart';
 
 /// Sends the selected zone to the PC ROS 2 gateway through `adb reverse`.
@@ -57,12 +56,6 @@ class PcSimulationConnection implements BleConnection {
   Future<bool> sendCleaningZone(CleaningZoneMission zone) async {
     if (_stopped || !zone.isValid) return false;
     return _sendPayload('/cleaning_zone', zone.toJson(), '清掃範囲');
-  }
-
-  @override
-  Future<bool> sendInitialPose(InitialPoseMission pose) async {
-    if (_stopped || !pose.isValid) return false;
-    return _sendPayload('/initial_pose', pose.toJson(), '開始地点');
   }
 
   Future<bool> _sendPayload(

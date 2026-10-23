@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mirs_ble_app/models/cleaning_zone.dart';
-import 'package:mirs_ble_app/models/initial_pose.dart';
 import 'package:mirs_ble_app/models/send_button_state.dart';
 import 'package:mirs_ble_app/services/ble_connection.dart';
 import 'package:mirs_ble_app/widgets/ble_tabs.dart';
@@ -11,8 +10,6 @@ Widget buildTab({
   List<MapPoint> selection = const [],
   ValueChanged<List<MapPoint>>? onSendPolygon,
   bool Function(List<MapPoint>)? canSend,
-  ValueChanged<InitialPoseMission>? onSendInitialPose,
-  bool Function(InitialPoseMission?)? canSendInitialPose,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -23,8 +20,6 @@ Widget buildTab({
         selectedMapPoints: selection,
         onSendPolygon: onSendPolygon ?? (_) {},
         canSendPolygon: canSend ?? (_) => true,
-        onSendInitialPose: onSendInitialPose ?? (_) {},
-        canSendInitialPose: canSendInitialPose ?? (_) => true,
         onStatusPressed: () {},
         sendButtonState: SendButtonState.ready,
       ),
@@ -66,34 +61,5 @@ void main() {
           orElse: () => throw StateError('X=2.00 フィールドが見つかりません'),
         );
     expect(updatedX.controller!.text, '2.00');
-  });
-
-  testWidgets('開始地点フォームの値がonSendInitialPoseへ渡される', (tester) async {
-    InitialPoseMission? received;
-    await tester.pumpWidget(buildTab(onSendInitialPose: (p) => received = p));
-
-    // デフォルト値 0.0 / 0.0 / 0.0 のまま送信ボタンをタップ。
-    await tester.tap(find.byIcon(Icons.my_location));
-    await tester.pump();
-
-    expect(received, isNotNull);
-    expect(received!.x, 0.0);
-    expect(received!.y, 0.0);
-    expect(received!.yaw, 0.0);
-  });
-
-  testWidgets('送信不可のとき開始地点ボタンは無効', (tester) async {
-    var pressed = false;
-    await tester.pumpWidget(
-      buildTab(
-        canSendInitialPose: (_) => false,
-        onSendInitialPose: (_) => pressed = true,
-      ),
-    );
-
-    await tester.tap(find.byIcon(Icons.my_location), warnIfMissed: false);
-    await tester.pump();
-
-    expect(pressed, isFalse);
   });
 }
