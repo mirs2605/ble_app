@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/send_button_state.dart';
-import '../services/ble_service.dart';
+import '../services/ble_connection.dart';
 import 'app_colors.dart';
 
 /// ピル型UI（通知バー・ステータス・送信ボタン）の深刻度。

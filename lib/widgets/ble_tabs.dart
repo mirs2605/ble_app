@@ -7,7 +7,7 @@ import '../models/initial_pose.dart';
 import '../models/map_config.dart';
 import '../models/map_edit_mode.dart';
 import '../models/send_button_state.dart';
-import '../services/ble_service.dart';
+import '../services/ble_connection.dart';
 import '../services/map_selection_controller.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_strings.dart';

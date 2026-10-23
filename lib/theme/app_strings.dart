@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/app_notice.dart';
-import '../services/ble_service.dart';
+import '../services/ble_connection.dart';
 
 /// 画面に表示する日本語文言の集約ポイント。
 /// ControllerやWidgetに文字列リテラルを散らばらせないための疎結合層。
