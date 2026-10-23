@@ -12,6 +12,7 @@ class MapManagementButton extends StatelessWidget {
     required this.onSelect,
     required this.onAdd,
     required this.onDelete,
+    this.imageStorage,
   });
 
   final MapConfig activeMap;
@@ -19,6 +20,9 @@ class MapManagementButton extends StatelessWidget {
   final Future<void> Function(MapConfig) onSelect;
   final Future<void> Function(MapConfig) onAdd;
   final Future<void> Function(MapConfig) onDelete;
+
+  /// 地図画像の選択・保存・削除。未指定なら端末のギャラリーとアプリ領域を使う。
+  final MapImageStorage? imageStorage;
 
   @override
   Widget build(BuildContext context) => OutlinedButton.icon(
@@ -30,6 +34,7 @@ class MapManagementButton extends StatelessWidget {
         onSelect: onSelect,
         onAdd: onAdd,
         onDelete: onDelete,
+        imageStorage: imageStorage ?? MapImageStorage(),
       ),
     ),
     icon: const Icon(Icons.map_outlined),
@@ -44,6 +49,7 @@ class _MapManagementDialog extends StatefulWidget {
     required this.onSelect,
     required this.onAdd,
     required this.onDelete,
+    required this.imageStorage,
   });
 
   final MapConfig activeMap;
@@ -51,13 +57,14 @@ class _MapManagementDialog extends StatefulWidget {
   final Future<void> Function(MapConfig) onSelect;
   final Future<void> Function(MapConfig) onAdd;
   final Future<void> Function(MapConfig) onDelete;
+  final MapImageStorage imageStorage;
 
   @override
   State<_MapManagementDialog> createState() => _MapManagementDialogState();
 }
 
 class _MapManagementDialogState extends State<_MapManagementDialog> {
-  final MapImageStorage _imageStorage = MapImageStorage();
+  MapImageStorage get _imageStorage => widget.imageStorage;
   late final List<MapConfig> _maps;
   bool _busy = false;
 
