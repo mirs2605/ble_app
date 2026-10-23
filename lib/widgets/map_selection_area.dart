@@ -338,6 +338,8 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                                       initialPose: widget.initialPose,
                                       poseDragStart: _poseDragStart,
                                       poseDragCurrent: _poseDragCurrent,
+                                      zoom: _mapTransformController.value
+                                          .getMaxScaleOnAxis(),
                                     ),
                                   ),
                                 ),
@@ -432,6 +434,10 @@ class _MapSelectionPainter extends CustomPainter {
   final Offset? poseDragStart;
   final Offset? poseDragCurrent;
 
+  /// 地図のズーム倍率。線や点は地図と一緒に拡大されるので、
+  /// この値で割り戻して画面上の大きさを一定に保つ（虫眼鏡内も同様）。
+  final double zoom;
+
   const _MapSelectionPainter(
     this.points, {
     this.mapConfig,
@@ -441,7 +447,11 @@ class _MapSelectionPainter extends CustomPainter {
     this.initialPose,
     this.poseDragStart,
     this.poseDragCurrent,
+    this.zoom = 1.0,
   });
+
+  /// 画面上のサイズ（論理px）を地図ローカル座標系の長さに変換する。
+  double _px(double screen) => screen / zoom;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -455,7 +465,7 @@ class _MapSelectionPainter extends CustomPainter {
         Paint()
           ..color = AppColors.selection.withValues(alpha: 0.9)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3
+          ..strokeWidth = _px(3)
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );
@@ -477,14 +487,14 @@ class _MapSelectionPainter extends CustomPainter {
         Paint()
           ..color = sendCompleted ? AppColors.completed : AppColors.selection
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3
+          ..strokeWidth = _px(3)
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );
 
       for (int i = 0; i < points.length; i++) {
         final point = MapGeometry.toScreenPoint(points[i], size, mapConfig);
-        final radius = i == activeHandle ? 7.0 : 5.0;
+        final radius = _px(i == activeHandle ? 7.0 : 5.0);
         canvas.drawCircle(
           point,
           radius,
@@ -528,27 +538,27 @@ class _MapSelectionPainter extends CustomPainter {
 
   /// 位置点に円、向きに矢印を描く。yawがnullなら円のみ（方向未確定）。
   void _drawPoseMarker(Canvas canvas, Offset center, double? yaw) {
-    canvas.drawCircle(center, 7.0, Paint()..color = AppColors.onColor);
+    canvas.drawCircle(center, _px(7.0), Paint()..color = AppColors.onColor);
     canvas.drawCircle(
       center,
-      7.0,
+      _px(7.0),
       Paint()
         ..color = AppColors.action
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
+        ..strokeWidth = _px(3),
     );
     if (yaw == null) return;
     // 画面Yは下向きなのでsinの符号を反転させる。
     final direction = Offset(math.cos(yaw), -math.sin(yaw));
     const arrowLength = 36.0;
-    final tip = center + direction * arrowLength;
+    final tip = center + direction * _px(arrowLength);
     canvas.drawLine(
       center,
       tip,
       Paint()
         ..color = AppColors.action
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
+        ..strokeWidth = _px(3)
         ..strokeCap = StrokeCap.round,
     );
     const headLength = 10.0;
@@ -561,14 +571,14 @@ class _MapSelectionPainter extends CustomPainter {
                 math.cos(baseAngle + sign * headAngle),
                 math.sin(baseAngle + sign * headAngle),
               ) *
-              headLength;
+              _px(headLength);
       canvas.drawLine(
         tip,
         headEnd,
         Paint()
           ..color = AppColors.action
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3
+          ..strokeWidth = _px(3)
           ..strokeCap = StrokeCap.round,
       );
     }
@@ -585,5 +595,6 @@ class _MapSelectionPainter extends CustomPainter {
       oldDelegate.initialPose?.y != initialPose?.y ||
       oldDelegate.initialPose?.yaw != initialPose?.yaw ||
       oldDelegate.poseDragStart != poseDragStart ||
-      oldDelegate.poseDragCurrent != poseDragCurrent;
+      oldDelegate.poseDragCurrent != poseDragCurrent ||
+      oldDelegate.zoom != zoom;
 }
