@@ -53,7 +53,6 @@ class _BleHomePageState extends State<BleHomePage> {
   void initState() {
     super.initState();
     _controller = BleHomeController(
-      useSimulation: widget.simulationMode,
       connectionFactory: widget.simulationMode
           ? PcSimulationConnection.new
           : null,

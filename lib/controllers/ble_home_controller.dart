@@ -25,11 +25,9 @@ class BleHomeController extends ChangeNotifier {
   BleHomeController({
     BleConnectionFactory? connectionFactory,
     PermissionGateway? permissionGateway,
-    bool useSimulation = false,
     MapConfigRepository? mapRepository,
   }) : _permissions = permissionGateway ?? const DefaultPermissionGateway(),
        _mapRepo = mapRepository ?? MapConfigRepository.instance {
-    _useSimulation = useSimulation;
     _connection = (connectionFactory ?? BleService.new)(
       onLog: _addServiceLog,
       onStatusChanged: _handleStatusChanged,
@@ -41,7 +39,6 @@ class BleHomeController extends ChangeNotifier {
   }
 
   late final BleConnection _connection;
-  late final bool _useSimulation;
   final PermissionGateway _permissions;
   final MapConfigRepository _mapRepo;
 
@@ -344,13 +341,12 @@ class BleHomeController extends ChangeNotifier {
   Future<void> _startAutoConnect() async {
     if (_autoConnectStarted || _isDisposed) return;
     _autoConnectStarted = true;
-    if ((!_useSimulation && !await _requestPermissions()) || _isDisposed) {
+    final usesBluetooth = _connection.usesBluetooth;
+    if ((usesBluetooth && !await _requestPermissions()) || _isDisposed) {
       return;
     }
     _connection.startAutoConnect();
-    if (_useSimulation) {
-      addLog('PCシミュレーションモード: USB (ADB reverse) でPCへ接続します');
-    } else {
+    if (usesBluetooth) {
       addLog(AppStrings.autoConnectGuide);
       notifyNotice(AppNotice.autoConnectStarted);
     }

@@ -73,6 +73,9 @@ class BleService implements BleConnection {
   @override
   BleStatus status = BleStatus.idle;
 
+  @override
+  bool get usesBluetooth => true;
+
   /// ログ出力コールバック
   final void Function(String message) onLog;
 

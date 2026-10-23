@@ -20,6 +20,9 @@ class PcSimulationConnection implements BleConnection {
   @override
   BleStatus get status => _status;
 
+  @override
+  bool get usesBluetooth => false;
+
   void _setStatus(BleStatus value) {
     if (_status == value) return;
     _status = value;
@@ -29,6 +32,7 @@ class PcSimulationConnection implements BleConnection {
   @override
   void startAutoConnect() {
     if (_stopped) return;
+    onLog('PCシミュレーションモード: USB (ADB reverse) でPCへ接続します');
     _setStatus(BleStatus.connecting);
   }
 
