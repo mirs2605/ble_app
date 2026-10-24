@@ -23,7 +23,7 @@ class MirsBleApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'MIRS BLE',
+      title: 'マツナビ',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: AppColors.action,

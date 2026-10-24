@@ -72,8 +72,10 @@ class PcSimulationConnection implements BleConnection {
       final request = await _client
           .postUrl(Uri.parse('http://127.0.0.1:8765$path'))
           .timeout(const Duration(seconds: 6));
+      final bodyBytes = utf8.encode(jsonEncode(payload));
       request.headers.contentType = ContentType.json;
-      request.write(jsonEncode(payload));
+      request.contentLength = bodyBytes.length;
+      request.add(bodyBytes);
       response = await request.close().timeout(const Duration(seconds: 8));
       final body = await utf8.decoder.bind(response).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {

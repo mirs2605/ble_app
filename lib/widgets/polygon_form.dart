@@ -12,7 +12,9 @@ class PolygonForm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(children: List.generate(4, (i) => _buildPointRow(i)));
+    return Column(
+      children: List.generate(xControllers.length, (i) => _buildPointRow(i)),
+    );
   }
 
   Widget _buildPointRow(int index) {
