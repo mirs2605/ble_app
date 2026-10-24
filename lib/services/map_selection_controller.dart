@@ -18,7 +18,7 @@ class MapSelectionController {
   }
 
   int? hitHandle(Offset localPosition, Size size, [MapConfig? config]) {
-    if (points.length != 4) return null;
+    if (points.length < CleaningZoneMission.minPoints) return null;
 
     for (int i = 0; i < points.length; i++) {
       final point = MapGeometry.toScreenPoint(points[i], size, config);
@@ -38,14 +38,14 @@ class MapSelectionController {
     points = MapGeometry.rectangleFrom(start, end, size, config);
   }
 
-  void updateRectangleFromPath(
+  void updatePolygonFromPath(
     List<Offset> path,
     Size size, [
     MapConfig? config,
   ]) {
-    final rectangle = MapGeometry.rectangleFromPath(path, size, config);
-    if (rectangle != null) {
-      points = rectangle;
+    final polygon = MapGeometry.polygonFromPath(path, size, config);
+    if (polygon != null) {
+      points = polygon;
     }
   }
 }

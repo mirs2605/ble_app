@@ -172,7 +172,8 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                 mapSize,
                 _mapConfig,
               );
-              if (_selectionController.points.length >= 4) {
+              if (_selectionController.points.length >=
+                  MapGeometry.freehandPolygonVertexCount) {
                 if (hit != null) {
                   setState(() {
                     _selectionController.activeHandleIndex = hit;
@@ -235,7 +236,8 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
               return;
             }
             if (_selectionController.activeHandleIndex != null &&
-                _selectionController.points.length == 4) {
+                _selectionController.points.length >=
+                    CleaningZoneMission.minPoints) {
               final next = List<MapPoint>.from(_selectionController.points);
               next[_selectionController.activeHandleIndex!] =
                   MapGeometry.fromLocal(local, mapSize, _mapConfig);
@@ -247,7 +249,8 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
               return;
             }
             if (_selectionController.selectionStart != null &&
-                _selectionController.points.length < 4) {
+                _selectionController.points.length <
+                    MapGeometry.freehandPolygonVertexCount) {
               setState(() => _freehandPath.add(local));
               _reportIdle();
             }
@@ -272,7 +275,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
             final wasDrawing = _selectionController.selectionStart != null;
             setState(() {
               if (!wasTransforming && wasDrawing) {
-                _selectionController.updateRectangleFromPath(
+                _selectionController.updatePolygonFromPath(
                   _freehandPath,
                   mapSize,
                   _mapConfig,
@@ -280,9 +283,10 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
               }
               _selectionController.selectionStart = null;
               if (!wasTransforming &&
-                  _selectionController.points.length == 4 &&
+                  _selectionController.points.length ==
+                      MapGeometry.freehandPolygonVertexCount &&
                   _selectionController.activeHandleIndex == null) {
-                widget.onLog?.call('🖐️ 四角形を選択しました');
+                widget.onLog?.call('🖐️ 6点の範囲を選択しました');
               }
               _selectionController.activeHandleIndex = null;
               _freehandPath.clear();

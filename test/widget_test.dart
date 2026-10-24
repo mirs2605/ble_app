@@ -196,19 +196,20 @@ void main() {
     expect(selection.hitHandle(const Offset(150, 80), size, map), 2);
   });
 
-  test('creates a four-corner polygon that follows a freehand path', () {
+  test('creates a six-corner polygon that follows a freehand path', () {
     const size = Size(561, 775);
     final controller = MapSelectionController()
-      ..updateRectangleFromPath(const [
-        Offset(120, 180),
-        Offset(280, 120),
-        Offset(430, 260),
-        Offset(380, 560),
-        Offset(140, 500),
+      ..updatePolygonFromPath(const [
+        Offset(280, 100),
+        Offset(497, 225),
+        Offset(497, 475),
+        Offset(280, 600),
+        Offset(63, 475),
+        Offset(63, 225),
       ], size);
 
-    expect(controller.points, hasLength(4));
-    expect(controller.points.toSet(), hasLength(4));
+    expect(controller.points, hasLength(6));
+    expect(controller.points.toSet(), hasLength(6));
     expect(
       controller.points,
       isNot(
