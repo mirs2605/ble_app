@@ -8,7 +8,7 @@ import 'ble_protocol.dart';
 
 /// [BleAdapter] の実機実装。flutter_blue_plusへの依存はこのファイルに閉じる。
 /// `dart:io` は使わず、プラットフォーム分岐は [defaultTargetPlatform] で行う。
-class FlutterBluePlusAdapter implements BleAdapter {
+class FlutterBluePlusAdapter implements BleAdapter, BleResponseCapability {
   BluetoothDevice? _device;
   BluetoothCharacteristic? _missionChar;
   BluetoothCharacteristic? _responseChar;
@@ -17,6 +17,10 @@ class FlutterBluePlusAdapter implements BleAdapter {
       StreamController<void>.broadcast();
   StreamSubscription<BluetoothConnectionState>? _connectionStateSub;
   bool _disposed = false;
+
+  @override
+  bool get hasReadableResponse =>
+      _responseChar != null && _responseChar!.properties.read;
 
   @override
   Stream<void> get linkLoss => _linkLossController.stream;
@@ -123,16 +127,18 @@ class FlutterBluePlusAdapter implements BleAdapter {
           )
           .firstOrNull;
 
-      if (!BleConnectionRequirements.hasWritableMissionAndReadableResponse(
-        missionFound: _missionChar != null,
-        missionWritable: _missionChar?.properties.write ?? false,
-        responseFound: _responseChar != null,
-        responseReadable: _responseChar?.properties.read ?? false,
-      )) {
+      final hasWritableMission =
+          _missionChar != null && _missionChar!.properties.write;
+      if (!hasWritableMission) {
         await device.disconnect().catchError((_) {});
         _clearEndpoint();
         throw const BleAdapterException(
           BleAdapterFailure.requirementsUnmet,
+        );
+      }
+      if (!hasReadableResponse) {
+        debugPrint(
+          'BLE server has no readable response characteristic; write completion is transport confirmation only.',
         );
       }
     } catch (e) {
