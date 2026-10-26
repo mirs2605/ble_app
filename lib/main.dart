@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'controllers/ble_home_controller.dart';
-import 'services/pc_simulation_connection.dart';
 import 'services/map_config_repository.dart';
 import 'theme/app_colors.dart';
 import 'widgets/ble_tabs.dart';
@@ -10,14 +9,11 @@ import 'widgets/icon_tab_navigation.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await MapConfigRepository.init();
-  const simulationMode = bool.fromEnvironment('SIMULATION_MODE');
-  runApp(MirsBleApp(simulationMode: simulationMode));
+  runApp(const MirsBleApp());
 }
 
 class MirsBleApp extends StatelessWidget {
-  const MirsBleApp({super.key, this.simulationMode = false});
-
-  final bool simulationMode;
+  const MirsBleApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -31,15 +27,13 @@ class MirsBleApp extends StatelessWidget {
         useMaterial3: true,
       ),
       themeMode: ThemeMode.dark,
-      home: BleHomePage(simulationMode: simulationMode),
+      home: const BleHomePage(),
     );
   }
 }
 
 class BleHomePage extends StatefulWidget {
-  const BleHomePage({super.key, required this.simulationMode});
-
-  final bool simulationMode;
+  const BleHomePage({super.key});
 
   @override
   State<BleHomePage> createState() => _BleHomePageState();
@@ -51,11 +45,7 @@ class _BleHomePageState extends State<BleHomePage> {
   @override
   void initState() {
     super.initState();
-    _controller = BleHomeController(
-      connectionFactory: widget.simulationMode
-          ? PcSimulationConnection.new
-          : null,
-    );
+    _controller = BleHomeController();
   }
 
   @override

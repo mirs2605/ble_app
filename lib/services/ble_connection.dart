@@ -16,10 +16,6 @@ enum BleStatus {
 abstract class BleConnection {
   BleStatus get status;
 
-  /// Bluetooth経由で接続するか。trueならControllerが接続前に権限を要求し、
-  /// BLE向けの案内を表示する。
-  bool get usesBluetooth;
-
   void startAutoConnect();
 
   void stopAutoConnect();

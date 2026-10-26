@@ -20,9 +20,6 @@ class FakeBleConnection implements BleConnection {
   @override
   BleStatus status = BleStatus.connected;
 
-  @override
-  bool usesBluetooth = true;
-
   int startAutoCalls = 0;
   int scanCalls = 0;
   int sendCalls = 0;
@@ -139,22 +136,6 @@ void main() {
     expect(controller.permissionsPermanentlyDenied, isTrue);
     expect(conn.scanCalls, 0);
     expect(controller.activeNotice, AppNotice.permissionMissing);
-  });
-
-  test('Bluetoothを使わない接続は権限を要求せず接続する', () async {
-    final conn = FakeBleConnection(onLog: (_) {}, onStatusChanged: (_) {})
-      ..usesBluetooth = false;
-    final controller = buildController(
-      connection: conn,
-      permissions: FakePermissions.denied(),
-    );
-    addTearDown(controller.dispose);
-
-    await flushAsync();
-    expect(controller.permissionsPermanentlyDenied, isFalse);
-    expect(conn.startAutoCalls, 1);
-    expect(conn.scanCalls, 1);
-    expect(controller.activeNotice, isNot(AppNotice.autoConnectStarted));
   });
 
   test('空の範囲では送信せず通知する', () async {

@@ -244,15 +244,10 @@ class BleHomeController extends ChangeNotifier {
   Future<void> _startAutoConnect() async {
     if (_autoConnectStarted || _isDisposed) return;
     _autoConnectStarted = true;
-    final usesBluetooth = _connection.usesBluetooth;
-    if ((usesBluetooth && !await _requestPermissions()) || _isDisposed) {
-      return;
-    }
+    if (!await _requestPermissions() || _isDisposed) return;
     _connection.startAutoConnect();
-    if (usesBluetooth) {
-      addLog(AppStrings.autoConnectGuide);
-      notifyNotice(AppNotice.autoConnectStarted);
-    }
+    addLog(AppStrings.autoConnectGuide);
+    notifyNotice(AppNotice.autoConnectStarted);
     unawaited(_connection.scanAndConnect());
   }
 
