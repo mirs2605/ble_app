@@ -12,6 +12,9 @@ abstract final class AppStrings {
   static const invalidRange = '清掃範囲が不正です';
   static const sendDone = '送信完了';
   static const sendFailed = '送信に失敗しました';
+  static const invalidSchedule = '定時清掃の設定が不正です';
+  static const scheduleDone = '定時清掃を予約しました';
+  static const scheduleCanceled = '定時清掃を解除しました';
   static const autoConnectStarted = 'BLE 自動接続を開始';
   static const permissionMissing = 'パーミッション不足';
   static const settingsOpenFailed = 'アプリ設定を開けませんでした';
@@ -27,6 +30,14 @@ abstract final class AppStrings {
   static const sent = '送信完了';
   static const sendTooltip = '送信';
   static const clearTooltip = '範囲を削除';
+  static const scheduleTooltip = '定時清掃を設定';
+  static const scheduleTitle = '定時清掃';
+  static const scheduleHelp = 'ロボットが決まった時刻に、囲んだ範囲の清掃を始めます。予定はロボットに保存されます。';
+  static const scheduleTimeLabel = '開始時刻';
+  static const scheduleWeekdaysLabel = '曜日';
+  static const scheduleReserve = '予約';
+  static const scheduleCancelAction = '予約を解除';
+  static const weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
   static const mapsTitle = '地図管理';
   static const addMap = 'スマホから地図を追加';
   static const mapDetailsTitle = '地図情報';
@@ -77,6 +88,9 @@ extension AppNoticePresentation on AppNotice {
     AppNotice.invalidRange => AppStrings.invalidRange,
     AppNotice.sendDone => AppStrings.sendDone,
     AppNotice.sendFailed => AppStrings.sendFailed,
+    AppNotice.invalidSchedule => AppStrings.invalidSchedule,
+    AppNotice.scheduleDone => AppStrings.scheduleDone,
+    AppNotice.scheduleCanceled => AppStrings.scheduleCanceled,
     AppNotice.autoConnectStarted => AppStrings.autoConnectStarted,
     AppNotice.permissionMissing => AppStrings.permissionMissing,
     AppNotice.settingsOpenFailed => AppStrings.settingsOpenFailed,
@@ -85,8 +99,11 @@ extension AppNoticePresentation on AppNotice {
 
   IconData get icon => switch (this) {
     AppNotice.specifyRange ||
-    AppNotice.invalidRange => Icons.warning_amber_rounded,
-    AppNotice.sendDone => Icons.check_circle,
+    AppNotice.invalidRange ||
+    AppNotice.invalidSchedule => Icons.warning_amber_rounded,
+    AppNotice.sendDone ||
+    AppNotice.scheduleDone ||
+    AppNotice.scheduleCanceled => Icons.check_circle,
     AppNotice.sendFailed || AppNotice.settingsOpenFailed => Icons.error_outline,
     AppNotice.autoConnectStarted => Icons.bluetooth_searching,
     AppNotice.permissionMissing => Icons.settings,

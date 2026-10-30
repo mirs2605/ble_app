@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mirs_ble_app/controllers/ble_home_controller.dart';
 import 'package:mirs_ble_app/models/app_notice.dart';
+import 'package:mirs_ble_app/models/cleaning_schedule.dart';
 import 'package:mirs_ble_app/models/cleaning_zone.dart';
 import 'package:mirs_ble_app/models/map_config.dart';
 import 'package:mirs_ble_app/models/send_button_state.dart';
@@ -40,6 +41,21 @@ class FakeBleConnection implements BleConnection {
   @override
   Future<bool> sendCleaningZone(CleaningZoneMission zone) async {
     sendCalls++;
+    return sendResult;
+  }
+
+  final List<CleaningScheduleMission> schedules = [];
+  int cancelScheduleCalls = 0;
+
+  @override
+  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule) async {
+    schedules.add(schedule);
+    return sendResult;
+  }
+
+  @override
+  Future<bool> cancelCleaningSchedule() async {
+    cancelScheduleCalls++;
     return sendResult;
   }
 

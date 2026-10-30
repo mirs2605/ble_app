@@ -1,3 +1,4 @@
+import '../models/cleaning_schedule.dart';
 import '../models/cleaning_zone.dart';
 
 /// BLE接続の状態
@@ -23,6 +24,10 @@ abstract class BleConnection {
   Future<void> scanAndConnect();
 
   Future<bool> sendCleaningZone(CleaningZoneMission zone);
+
+  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule);
+
+  Future<bool> cancelCleaningSchedule();
 
   Future<void> dispose();
 }

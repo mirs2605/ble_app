@@ -5,6 +5,7 @@ import 'services/map_config_repository.dart';
 import 'theme/app_colors.dart';
 import 'widgets/ble_tabs.dart';
 import 'widgets/icon_tab_navigation.dart';
+import 'widgets/schedule_dialog.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -95,6 +96,17 @@ class _BleHomePageState extends State<BleHomePage> {
                 onMapSelected: _controller.switchMap,
                 onMapAdded: _controller.addMap,
                 onMapDeleted: _controller.deleteMap,
+                onScheduleResult: (result) => switch (result) {
+                  ScheduleReserve(:final time, :final weekdays) =>
+                    _controller.sendSchedule(
+                      hour: time.hour,
+                      minute: time.minute,
+                      weekdays: weekdays,
+                    ),
+                  ScheduleCancel() => _controller.cancelSchedule(),
+                },
+                canReserveSchedule: _controller.canReserveSchedule,
+                canCancelSchedule: _controller.canCancelSchedule,
               ),
               BleLogsTab(
                 logs: _controller.logs,

@@ -12,6 +12,7 @@ class MapSelectionActions extends StatelessWidget {
   final bool canSend;
   final VoidCallback onClear;
   final VoidCallback onSend;
+  final VoidCallback? onSchedule;
   final SendButtonState sendButtonState;
 
   const MapSelectionActions({
@@ -21,6 +22,7 @@ class MapSelectionActions extends StatelessWidget {
     required this.canSend,
     required this.onClear,
     required this.onSend,
+    this.onSchedule,
     this.sendButtonState = SendButtonState.ready,
   });
 
@@ -50,6 +52,19 @@ class MapSelectionActions extends StatelessWidget {
                     elevation: 0,
                     child: const Icon(Icons.delete_outline),
                   ),
+                ),
+              ),
+            ),
+          if (onSchedule != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: FloatingActionButton(
+                  heroTag: 'schedule',
+                  onPressed: onSchedule,
+                  tooltip: AppStrings.scheduleTooltip,
+                  child: const Icon(Icons.schedule),
                 ),
               ),
             ),

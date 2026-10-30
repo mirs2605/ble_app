@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../models/cleaning_schedule.dart';
 import '../models/cleaning_zone.dart';
 import 'ble_adapter.dart';
 import 'ble_connection.dart';
@@ -226,6 +227,19 @@ class BleService implements BleConnection {
     }
     return _sendJson(zone.toJson(), label: '清掃範囲');
   }
+
+  @override
+  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule) async {
+    if (!schedule.isValid) {
+      _log('❌ 定時清掃の設定が不正です。');
+      return false;
+    }
+    return _sendJson(schedule.toJson(), label: '定時清掃');
+  }
+
+  @override
+  Future<bool> cancelCleaningSchedule() =>
+      _sendJson(const CleaningScheduleCancel().toJson(), label: '定時清掃の解除');
 
   /// JSON化可能なオブジェクトを改行区切りでBLE送信する共通実装。
   ///

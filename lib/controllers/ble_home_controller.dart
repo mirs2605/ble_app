@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../models/app_notice.dart';
+import '../models/cleaning_schedule.dart';
 import '../models/cleaning_zone.dart';
 import '../models/map_config.dart';
 import '../models/send_button_state.dart';
@@ -228,6 +229,51 @@ class BleHomeController extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  /// 選択中の範囲を、毎週 [weekdays] の [hour]:[minute] に清掃する予定として
+  /// ロボットへ預ける。時刻の判定と開始はロボット側が行う。
+  Future<void> sendSchedule({
+    required int hour,
+    required int minute,
+    required Set<int> weekdays,
+  }) async {
+    final points = List<MapPoint>.from(mapSelection.points);
+    if (points.isEmpty) {
+      addLog('❌ ${AppStrings.specifyRange}');
+      notifyNotice(AppNotice.specifyRange);
+      return;
+    }
+    final schedule = CleaningScheduleMission(
+      hour: hour,
+      minute: minute,
+      weekdays: weekdays,
+      zone: CleaningZoneMission(polygon: points),
+    );
+    if (!schedule.isValid) {
+      addLog('❌ ${AppStrings.invalidSchedule}');
+      notifyNotice(AppNotice.invalidSchedule);
+      return;
+    }
+    final sent = await _connection.sendCleaningSchedule(schedule);
+    if (_isDisposed) return;
+    notifyNotice(sent ? AppNotice.scheduleDone : AppNotice.sendFailed);
+  }
+
+  /// ロボットに預けた定時清掃の予定を解除する。
+  Future<void> cancelSchedule() async {
+    final sent = await _connection.cancelCleaningSchedule();
+    if (_isDisposed) return;
+    notifyNotice(sent ? AppNotice.scheduleCanceled : AppNotice.sendFailed);
+  }
+
+  /// 予約が可能か（接続済みで、有効な範囲が選択されている）。
+  /// 清掃範囲の送信済み状態には左右されない。
+  bool get canReserveSchedule =>
+      _status == BleStatus.connected &&
+      CleaningZoneMission(polygon: mapSelection.points).isValid;
+
+  /// 予定の解除が可能か（接続済み）。
+  bool get canCancelSchedule => _status == BleStatus.connected;
 
   /// 送信ボタン活性条件。数値タブはフォーム値で判定する。
   bool canSendPolygon(List<MapPoint> polygon) =>
