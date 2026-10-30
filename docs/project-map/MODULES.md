@@ -12,7 +12,8 @@
 
 | ファイル | 役割 |
 |---|---|
-| `ble_home_controller.dart` ★414 | 画面の facade。接続状態・権限・地図・選択・開始地点・送信・ログ・通知を公開する |
+| `ble_home_controller.dart` ★340 | 画面の facade。接続状態・権限・地図・選択・送信・ログ・通知を公開する |
+| `schedule_coordinator.dart` | 定時清掃の予定管理と同期の協調役。SQLite永続化・BLE同期・ダイアログへの窓口提供 |
 | `send_mission_tracker.dart` | 送信の進行状況 → `SendButtonState` |
 | `notice_board.dart` | 一定時間だけ値を表示する汎用ボード（`TimerScheduler` を注入可能） |
 
@@ -20,7 +21,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| `cleaning_schedule.dart` | `CleaningScheduleMission`（時刻・曜日・範囲の定時清掃。検証と JSON 化）、`CleaningScheduleCancel`。契約は [../schedule-contract.md](../schedule-contract.md) |
+| `schedule_entry.dart` | `ScheduleEntry`（定時清掃の予定1件。id・revision・deleted を持ち、JSON / SQLite の行へ往復。検証）。契約は [../schedule-contract.md](../schedule-contract.md) |
 | `cleaning_zone.dart` | `MapPoint`、`CleaningZoneMission`（JSON 化。閉路に変換。座標の範囲・頂点数（3点以上）・frame_id を検証） |
 | `initial_pose.dart` | `InitialPoseMission`（x, y, theta の JSON と検証） |
 | `map_config.dart` | `MapConfig`（画像・解像度・原点）、`BuiltinMaps`（学生玄関・MIRS の組み込み地図） |
@@ -32,6 +33,7 @@
 | ファイル | 役割 |
 |---|---|
 | `ble_connection.dart` | `BleStatus`、抽象 `BleConnection`、`BleConnectionFactory` |
+| `schedule_repository.dart` / `schedule_sync.dart` | 予定の SQLite 永続化（墓標も保持）／ロボットとの同期（`planScheduleSync` は revision で採用側を決める純粋関数） |
 | `ble_service.dart` ★337 | BLE 実装: 自動スキャン・接続・Characteristic の検出・MTU 調整・分割送信・ACK の判定・再接続。`BleStatus` を再 export |
 | `ble_adapter.dart` | flutter_blue_plus を隠すための抽象 `BleAdapter` と例外・値型 |
 | `flutter_blue_plus_adapter.dart` | `BleAdapter` の本番実装 |
@@ -47,18 +49,19 @@
 | ファイル | 役割 |
 |---|---|
 | `ble_tabs.dart` ★501 | `BleHomeTab`（地図）、`BleValuesTab`（4点の数値入力・開始地点フォーム）、`BleLogsTab` |
-| `map_selection_area.dart` ★585 | 地図の描画、ジェスチャー、拡大鏡、範囲・開始地点の Painter |
-| `map_management_button.dart` ★347 | 地図の切替・追加・削除ダイアログ |
-| `map_selection_actions.dart` / `bottom_send_action.dart` / `mission_send_button.dart` | 送信・クリア・定時清掃ボタンの UI |
-| `schedule_dialog.dart` | 定時清掃の設定ダイアログ（時刻・曜日・予約・解除） |
-| `status_notification_bar.dart` / `ble_status_indicator.dart` | 通知バー・接続状態のピル（`SelectedTabIcon` もここ） |
-| `icon_tab_navigation.dart` / `polygon_form.dart` / `permission_settings_button.dart` / `frosted_glass.dart` | 小さな UI 部品 |
-| `floating_action_controls.dart` | ボタンをまとめて export するだけのファイル |
+| `schedule_dialog.dart` | 予定一覧・追加・有効無効トグル・削除・手動同期のダイアログ（`ScheduleDialogHost` で Controller と疎結合） |
+| `map_selection_area.dart` ★469 | 地図画像の表示とフリーハンド・頂点移動のジェスチャー処理 |
+| `map_management_button.dart` | 地図選択・追加・削除のポップアップメニュー |
+| `polygon_form.dart` | 4点の数値入力フォーム（バリデーションつき） |
+| `floating_action_controls.dart` | 右下の送信・クリアボタン |
+| `ble_status_indicator.dart` | Bluetooth ステータスアイコン |
+| `status_notification_bar.dart` | 画面上部の時限通知バー |
+| `icon_tab_navigation.dart` | 画面下部の3タブ切り替えバー |
+| `dashed_rectangle_painter.dart` | 選択枠の点線描画 |
 
 ### theme/
 
-`app_strings.dart`（UI 文言。`AppNotice` の表示拡張）、`app_colors.dart`、`pill_style.dart`（状態 → ピルの見た目）。
-
-## test/
-
-テスト対象と同じ名前のファイルに `_test.dart` を付けた構成。`widget_test.dart` は座標変換・モデル・アプリ起動の総合テスト（地図定数の期待値を含む）。DB を使うテストは `sqflite_common_ffi` を使う。
+| ファイル | 役割 |
+|---|---|
+| `app_colors.dart` | アプリ全体のカラーパレット定義 |
+| `app_strings.dart` | アプリ内文言・ログ・ステータステキストの一元定義 |

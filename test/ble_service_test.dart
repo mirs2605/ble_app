@@ -32,6 +32,9 @@ class FakeBleAdapter implements BleAdapter {
   List<List<int>>? written;
   Completer<void>? gateWrite;
   List<int> response = const [65, 67, 75];
+
+  /// 空でなければ、readResponse が先頭から順に返す（取得系のテスト用）。
+  final List<List<int>> responseQueue = [];
   BleAdapterException? readError;
 
   @override
@@ -90,6 +93,7 @@ class FakeBleAdapter implements BleAdapter {
   Future<List<int>> readResponse({required Duration timeout}) async {
     readCalls++;
     if (readError != null) throw readError!;
+    if (responseQueue.isNotEmpty) return responseQueue.removeAt(0);
     return response;
   }
 

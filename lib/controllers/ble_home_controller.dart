@@ -3,33 +3,53 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../models/app_notice.dart';
-import '../models/cleaning_schedule.dart';
 import '../models/cleaning_zone.dart';
 import '../models/map_config.dart';
+import '../models/schedule_entry.dart';
 import '../models/send_button_state.dart';
 import '../services/ble_connection.dart';
 import '../services/ble_service.dart';
 import '../services/map_config_repository.dart';
 import '../services/map_selection_controller.dart';
 import '../services/permission_gateway.dart';
+import '../services/schedule_repository.dart';
 import '../theme/app_strings.dart';
+import '../widgets/schedule_dialog.dart';
 import 'notice_board.dart';
+import 'schedule_coordinator.dart';
 import 'send_mission_tracker.dart';
 
-/// 画面の協調役（facade）。BLE接続・権限・送信進行・時限表示の
+/// 画面の協調役（facade）。BLE接続・権限・送信進行・時限表示・予定同期の
 /// 詳細は [BleConnection] / [PermissionGateway] / [SendMissionTracker] /
-/// [NoticeBoard] に委ね、このクラスは配線と公開状態に徹する。
+/// [NoticeBoard] / [ScheduleCoordinator] に委ね、このクラスは配線と公開状態に徹する。
 class BleHomeController extends ChangeNotifier {
   BleHomeController({
     BleConnectionFactory? connectionFactory,
     PermissionGateway? permissionGateway,
     MapConfigRepository? mapRepository,
+    ScheduleRepository? scheduleRepository,
+    ScheduleCoordinator? scheduleCoordinator,
   }) : _permissions = permissionGateway ?? const DefaultPermissionGateway(),
        _mapRepo = mapRepository ?? MapConfigRepository.instance {
     _connection = (connectionFactory ?? BleService.new)(
       onLog: _addServiceLog,
       onStatusChanged: _handleStatusChanged,
     );
+    if (scheduleCoordinator != null) {
+      _scheduleCoordinator = scheduleCoordinator;
+    } else if (scheduleRepository != null) {
+      _scheduleCoordinator = ScheduleCoordinator(
+        repository: scheduleRepository,
+        connection: _connection,
+        selectedPolygon: () => mapSelection.points,
+        isConnected: () => _status == BleStatus.connected,
+        onLog: addLog,
+        onNotice: notifyNotice,
+      );
+    } else {
+      _scheduleCoordinator = null;
+    }
+    _scheduleCoordinator?.addListener(_guardedNotify);
     _statusBoard = NoticeBoard<String>(onChanged: _guardedNotify);
     _noticeBoard = NoticeBoard<AppNotice>(onChanged: _guardedNotify);
     unawaited(_startAutoConnect());
@@ -39,6 +59,10 @@ class BleHomeController extends ChangeNotifier {
   late final BleConnection _connection;
   final PermissionGateway _permissions;
   final MapConfigRepository _mapRepo;
+  late final ScheduleCoordinator? _scheduleCoordinator;
+
+  /// 接続が確立している間 true。接続の確立直後に一度だけ同期するための印。
+  bool _linkUp = false;
 
   BleStatus _status = BleStatus.idle;
   bool _permissionsPermanentlyDenied = false;
@@ -230,50 +254,51 @@ class BleHomeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 選択中の範囲を、毎週 [weekdays] の [hour]:[minute] に清掃する予定として
-  /// ロボットへ預ける。時刻の判定と開始はロボット側が行う。
-  Future<void> sendSchedule({
+  // ─────────────────────────────────────────
+  // 定時清掃の予定（ScheduleCoordinator へ委譲）
+  // ─────────────────────────────────────────
+
+  /// 予定機能が使えるか（初期化時にリポジトリまたはコーディネータが渡されている）。
+  bool get scheduleAvailable => _scheduleCoordinator != null;
+
+  /// ダイアログ表示用のホスト窓口。
+  ScheduleDialogHost? get scheduleDialogHost =>
+      _scheduleCoordinator?.createDialogHost();
+
+  /// 画面に出す予定（削除済みを除く）。
+  List<ScheduleEntry> get schedules =>
+      _scheduleCoordinator?.schedules ?? const [];
+
+  /// 選択中の範囲で予定を追加できるか。
+  bool get canAddSchedule => _scheduleCoordinator?.canAdd ?? false;
+
+  /// 予定同期が可能か（接続中）。
+  bool get canSyncSchedules => _scheduleCoordinator?.canSync ?? false;
+
+  /// 選択中の範囲を予定として追加する。
+  Future<void> addSchedule({
     required int hour,
     required int minute,
     required Set<int> weekdays,
-  }) async {
-    final points = List<MapPoint>.from(mapSelection.points);
-    if (points.isEmpty) {
-      addLog('❌ ${AppStrings.specifyRange}');
-      notifyNotice(AppNotice.specifyRange);
-      return;
-    }
-    final schedule = CleaningScheduleMission(
-      hour: hour,
-      minute: minute,
-      weekdays: weekdays,
-      zone: CleaningZoneMission(polygon: points),
-    );
-    if (!schedule.isValid) {
-      addLog('❌ ${AppStrings.invalidSchedule}');
-      notifyNotice(AppNotice.invalidSchedule);
-      return;
-    }
-    final sent = await _connection.sendCleaningSchedule(schedule);
-    if (_isDisposed) return;
-    notifyNotice(sent ? AppNotice.scheduleDone : AppNotice.sendFailed);
-  }
+  }) =>
+      _scheduleCoordinator?.addSchedule(
+        hour: hour,
+        minute: minute,
+        weekdays: weekdays,
+      ) ??
+      Future.value();
 
-  /// ロボットに預けた定時清掃の予定を解除する。
-  Future<void> cancelSchedule() async {
-    final sent = await _connection.cancelCleaningSchedule();
-    if (_isDisposed) return;
-    notifyNotice(sent ? AppNotice.scheduleCanceled : AppNotice.sendFailed);
-  }
+  /// 予定の有効/無効を切り替える。
+  Future<void> setScheduleEnabled(String id, bool enabled) =>
+      _scheduleCoordinator?.setScheduleEnabled(id, enabled) ?? Future.value();
 
-  /// 予約が可能か（接続済みで、有効な範囲が選択されている）。
-  /// 清掃範囲の送信済み状態には左右されない。
-  bool get canReserveSchedule =>
-      _status == BleStatus.connected &&
-      CleaningZoneMission(polygon: mapSelection.points).isValid;
+  /// 予定を削除する（墓標化）。
+  Future<void> deleteSchedule(String id) =>
+      _scheduleCoordinator?.deleteSchedule(id) ?? Future.value();
 
-  /// 予定の解除が可能か（接続済み）。
-  bool get canCancelSchedule => _status == BleStatus.connected;
+  /// ロボットと予定を突き合わせる。
+  Future<void> syncSchedules({bool announce = true}) =>
+      _scheduleCoordinator?.syncSchedules(announce: announce) ?? Future.value();
 
   /// 送信ボタン活性条件。数値タブはフォーム値で判定する。
   bool canSendPolygon(List<MapPoint> polygon) =>
@@ -312,6 +337,13 @@ class BleHomeController extends ChangeNotifier {
 
   void _handleStatusChanged(BleStatus status) {
     if (_isDisposed) return;
+    final up = status == BleStatus.connected || status == BleStatus.sending;
+    final becameUp = up && !_linkUp;
+    _linkUp = up;
+    if (becameUp) {
+      // _status の更新後に走らせる（同期は接続済みを前提にする）。
+      _scheduleCoordinator?.onLinkEstablished();
+    }
     // 送信中はBTアイコンを反応させない。送信表示は送信ボタンと
     // 独立通知バー側に任せ、接続表示は維持する。
     // BLE層内部の status は sending になるため自動再スキャン抑止は効く。
@@ -356,6 +388,7 @@ class BleHomeController extends ChangeNotifier {
     _isDisposed = true;
     _connection.stopAutoConnect();
     unawaited(_connection.dispose());
+    _scheduleCoordinator?.dispose();
     _statusBoard.dispose();
     _noticeBoard.dispose();
     super.dispose();

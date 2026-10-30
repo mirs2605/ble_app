@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mirs_ble_app/controllers/ble_home_controller.dart';
 import 'package:mirs_ble_app/models/app_notice.dart';
-import 'package:mirs_ble_app/models/cleaning_schedule.dart';
 import 'package:mirs_ble_app/models/cleaning_zone.dart';
 import 'package:mirs_ble_app/models/map_config.dart';
+import 'package:mirs_ble_app/models/schedule_entry.dart';
 import 'package:mirs_ble_app/models/send_button_state.dart';
 import 'package:mirs_ble_app/services/ble_connection.dart';
 import 'package:mirs_ble_app/services/permission_gateway.dart';
@@ -44,19 +44,18 @@ class FakeBleConnection implements BleConnection {
     return sendResult;
   }
 
-  final List<CleaningScheduleMission> schedules = [];
-  int cancelScheduleCalls = 0;
+  /// ロボットが持つ予定（pullSchedules が返す）。null なら取得失敗。
+  List<ScheduleEntry>? remoteSchedules = [];
+  final List<ScheduleEntry> pushed = [];
+  bool pushResult = true;
 
   @override
-  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule) async {
-    schedules.add(schedule);
-    return sendResult;
-  }
+  Future<List<ScheduleEntry>?> pullSchedules() async => remoteSchedules;
 
   @override
-  Future<bool> cancelCleaningSchedule() async {
-    cancelScheduleCalls++;
-    return sendResult;
+  Future<bool> pushSchedule(ScheduleEntry entry) async {
+    pushed.add(entry);
+    return pushResult;
   }
 
   @override

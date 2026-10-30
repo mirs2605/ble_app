@@ -40,11 +40,8 @@ class BleHomeTab extends StatelessWidget {
   final Future<void> Function(MapConfig) onMapAdded;
   final Future<void> Function(MapConfig) onMapDeleted;
 
-  /// 定時清掃ダイアログの結果を受け取る。null なら定時清掃ボタンを出さない。
-  final ValueChanged<ScheduleDialogResult>? onScheduleResult;
-  final bool canReserveSchedule;
-  final bool canCancelSchedule;
-
+  /// 定時清掃ダイアログの窓口。null なら定時清掃ボタンを出さない。
+  final ScheduleDialogHost? scheduleHost;
   const BleHomeTab({
     super.key,
     required this.mapSelection,
@@ -67,9 +64,7 @@ class BleHomeTab extends StatelessWidget {
     required this.onMapSelected,
     required this.onMapAdded,
     required this.onMapDeleted,
-    this.onScheduleResult,
-    this.canReserveSchedule = false,
-    this.canCancelSchedule = false,
+    this.scheduleHost,
   });
 
   @override
@@ -114,16 +109,9 @@ class BleHomeTab extends StatelessWidget {
           sendButtonState: sendButtonState,
           onClear: onClearSelection,
           onSend: onSend,
-          onSchedule: onScheduleResult == null
+          onSchedule: scheduleHost == null
               ? null
-              : () async {
-                  final result = await showScheduleDialog(
-                    context,
-                    canReserve: canReserveSchedule,
-                    canCancel: canCancelSchedule,
-                  );
-                  if (result != null) onScheduleResult!(result);
-                },
+              : () => showScheduleDialog(context, scheduleHost!),
         ),
       ],
     );

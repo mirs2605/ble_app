@@ -1,5 +1,5 @@
-import '../models/cleaning_schedule.dart';
 import '../models/cleaning_zone.dart';
+import '../models/schedule_entry.dart';
 
 /// BLE接続の状態
 enum BleStatus {
@@ -25,16 +25,17 @@ abstract class BleConnection {
 
   Future<bool> sendCleaningZone(CleaningZoneMission zone);
 
-  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule);
+  /// ロボットが持つ予定を全件（削除済みを含む）取得する。失敗は null。
+  Future<List<ScheduleEntry>?> pullSchedules();
 
-  Future<bool> cancelCleaningSchedule();
+  /// 予定1件（削除済みを含む）をロボットへ送る。
+  Future<bool> pushSchedule(ScheduleEntry entry);
 
   Future<void> dispose();
 }
 
 /// [BleConnection] の生成関数。コールバックをController側から渡すための型。
-typedef BleConnectionFactory =
-    BleConnection Function({
-      required void Function(String message) onLog,
-      required void Function(BleStatus status) onStatusChanged,
-    });
+typedef BleConnectionFactory = BleConnection Function({
+  required void Function(String message) onLog,
+  required void Function(BleStatus status) onStatusChanged,
+});

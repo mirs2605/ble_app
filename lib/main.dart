@@ -2,19 +2,22 @@ import 'package:flutter/material.dart';
 
 import 'controllers/ble_home_controller.dart';
 import 'services/map_config_repository.dart';
+import 'services/schedule_repository.dart';
 import 'theme/app_colors.dart';
 import 'widgets/ble_tabs.dart';
 import 'widgets/icon_tab_navigation.dart';
-import 'widgets/schedule_dialog.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await MapConfigRepository.init();
-  runApp(const MirsBleApp());
+  final scheduleRepository = await ScheduleRepository.open();
+  runApp(MirsBleApp(scheduleRepository: scheduleRepository));
 }
 
 class MirsBleApp extends StatelessWidget {
-  const MirsBleApp({super.key});
+  const MirsBleApp({super.key, this.scheduleRepository});
+
+  final ScheduleRepository? scheduleRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -28,13 +31,15 @@ class MirsBleApp extends StatelessWidget {
         useMaterial3: true,
       ),
       themeMode: ThemeMode.dark,
-      home: const BleHomePage(),
+      home: BleHomePage(scheduleRepository: scheduleRepository),
     );
   }
 }
 
 class BleHomePage extends StatefulWidget {
-  const BleHomePage({super.key});
+  const BleHomePage({super.key, this.scheduleRepository});
+
+  final ScheduleRepository? scheduleRepository;
 
   @override
   State<BleHomePage> createState() => _BleHomePageState();
@@ -46,7 +51,9 @@ class _BleHomePageState extends State<BleHomePage> {
   @override
   void initState() {
     super.initState();
-    _controller = BleHomeController();
+    _controller = BleHomeController(
+      scheduleRepository: widget.scheduleRepository,
+    );
   }
 
   @override
@@ -96,17 +103,7 @@ class _BleHomePageState extends State<BleHomePage> {
                 onMapSelected: _controller.switchMap,
                 onMapAdded: _controller.addMap,
                 onMapDeleted: _controller.deleteMap,
-                onScheduleResult: (result) => switch (result) {
-                  ScheduleReserve(:final time, :final weekdays) =>
-                    _controller.sendSchedule(
-                      hour: time.hour,
-                      minute: time.minute,
-                      weekdays: weekdays,
-                    ),
-                  ScheduleCancel() => _controller.cancelSchedule(),
-                },
-                canReserveSchedule: _controller.canReserveSchedule,
-                canCancelSchedule: _controller.canCancelSchedule,
+                scheduleHost: _controller.scheduleDialogHost,
               ),
               BleLogsTab(
                 logs: _controller.logs,

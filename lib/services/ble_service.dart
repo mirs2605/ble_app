@@ -3,8 +3,8 @@
 import 'dart:async';
 import 'dart:convert';
 
-import '../models/cleaning_schedule.dart';
 import '../models/cleaning_zone.dart';
+import '../models/schedule_entry.dart';
 import 'ble_adapter.dart';
 import 'ble_connection.dart';
 import 'flutter_blue_plus_adapter.dart';
@@ -229,24 +229,76 @@ class BleService implements BleConnection {
   }
 
   @override
-  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule) async {
-    if (!schedule.isValid) {
+  Future<bool> pushSchedule(ScheduleEntry entry) async {
+    if (!entry.isValid) {
       _log('❌ 定時清掃の設定が不正です。');
       return false;
     }
-    return _sendJson(schedule.toJson(), label: '定時清掃');
+    return _sendJson({
+      'type': 'schedule_upsert',
+      ...entry.toJson(),
+    }, label: '定時清掃');
   }
 
+  /// 予定を1件ずつ取得する。要求（`schedule_pull`）を書き込み、
+  /// Response Characteristic に置かれた1件分のJSONを読む。
   @override
-  Future<bool> cancelCleaningSchedule() =>
-      _sendJson(const CleaningScheduleCancel().toJson(), label: '定時清掃の解除');
+  Future<List<ScheduleEntry>?> pullSchedules() async {
+    final entries = <ScheduleEntry>[];
+    var count = 1;
+    for (var index = 0; index < count; index++) {
+      Map<String, dynamic>? reply;
+      final ok = await _sendJson(
+        {'type': 'schedule_pull', 'index': index},
+        label: '予定の取得',
+        quiet: true,
+        acceptResponse: (bytes) {
+          reply = _decodeJsonObject(bytes);
+          return reply != null;
+        },
+      );
+      final page = reply;
+      if (!ok || page == null) {
+        _log('❌ 予定を取得できませんでした。');
+        return null;
+      }
+      final total = page['count'];
+      if (total is! int || total < 0) {
+        _log('❌ 予定の件数が不正です。');
+        return null;
+      }
+      count = total.clamp(0, ScheduleEntry.maxEntries);
+      final item = page['item'];
+      if (count == 0 || item is! Map) continue;
+      try {
+        entries.add(ScheduleEntry.fromJson(Map<String, dynamic>.from(item)));
+      } on FormatException catch (e) {
+        _log('⚠️ 不正な予定を読み飛ばしました: ${e.message}');
+      }
+    }
+    return entries;
+  }
+  static Map<String, dynamic>? _decodeJsonObject(List<int> bytes) {
+    try {
+      final decoded = jsonDecode(utf8.decode(bytes));
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+    } on FormatException {
+      return null;
+    }
+  }
 
   /// JSON化可能なオブジェクトを改行区切りでBLE送信する共通実装。
   ///
   /// 接続チェック・チャンク分割・ACK確認を担い、上位メソッドはバリデーションのみ。
+  ///
+  /// [acceptResponse] を渡すと、応答が `ACK` かどうかの代わりにそれで成否を決める
+  /// （予定の取得のように、応答にデータが載る場合）。[quiet] は送信内容と
+  /// 完了のログを省く（同期で何度も呼ぶため）。
   Future<bool> _sendJson(
     Map<String, dynamic> json, {
     required String label,
+    bool Function(List<int> response)? acceptResponse,
+    bool quiet = false,
   }) async {
     if (!_isReady) {
       _log('❌ 未接続です。先に接続してください。');
@@ -281,8 +333,10 @@ class BleService implements BleConnection {
         _setStatus(BleStatus.connected);
         return false;
       }
-      _log('📤 $label送信中 (${bytes.length} bytes)...');
-      _log('   $jsonStr');
+      if (!quiet) {
+        _log('📤 $label送信中 (${bytes.length} bytes)...');
+        _log('   $jsonStr');
+      }
 
       try {
         await _adapter.writeChunks(BlePayloadChunker.split(bytes, payloadSize));
@@ -295,7 +349,7 @@ class BleService implements BleConnection {
       if (!expectsAck) {
         _log('BLE書き込み完了。サーバーからACKが返らないため、ROSでの受信・計画結果はPC側で確認してください。');
         _setStatus(BleStatus.connected);
-        return true;
+        return acceptResponse == null;
       }
       late final List<int> response;
       try {
@@ -306,13 +360,16 @@ class BleService implements BleConnection {
         _setStatus(BleStatus.error);
         return false;
       }
-      if (!BleResponse.isAccepted(response)) {
+      final accepted = acceptResponse != null
+          ? acceptResponse(response)
+          : BleResponse.isAccepted(response);
+      if (!accepted) {
         final responseText = utf8.decode(response, allowMalformed: true);
         _log('❌ ロボット側で$labelが拒否されました: $responseText');
         _setStatus(BleStatus.error);
         return false;
       }
-      _log('✅ $label送信完了');
+      if (!quiet) _log('✅ $label送信完了');
       _setStatus(BleStatus.connected);
       return true;
     } catch (e) {
