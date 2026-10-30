@@ -1,9 +1,0 @@
-repositories:
-  mirs2605/ble_server:
-    type: git
-    url: https://github.com/mirs2605/ble_server.git
-    version: main
-  open-navigation/opennav_coverage:
-    type: git
-    url: https://github.com/open-navigation/opennav_coverage.git
-    version: jazzy-v2
