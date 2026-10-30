@@ -3,8 +3,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../models/cleaning_schedule.dart';
 import '../models/cleaning_zone.dart';
-import '../models/initial_pose.dart';
 import 'ble_adapter.dart';
 import 'ble_connection.dart';
 import 'flutter_blue_plus_adapter.dart';
@@ -229,13 +229,17 @@ class BleService implements BleConnection {
   }
 
   @override
-  Future<bool> sendInitialPose(InitialPoseMission pose) async {
-    if (!pose.isValid) {
-      _log('❌ 開始地点が不正です。');
+  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule) async {
+    if (!schedule.isValid) {
+      _log('❌ 定時清掃の設定が不正です。');
       return false;
     }
-    return _sendJson(pose.toJson(), label: '開始地点');
+    return _sendJson(schedule.toJson(), label: '定時清掃');
   }
+
+  @override
+  Future<bool> cancelCleaningSchedule() =>
+      _sendJson(const CleaningScheduleCancel().toJson(), label: '定時清掃の解除');
 
   /// JSON化可能なオブジェクトを改行区切りでBLE送信する共通実装。
   ///
@@ -258,9 +262,7 @@ class BleService implements BleConnection {
     try {
       final jsonStr = jsonEncode(json);
       final bytes = utf8.encode('$jsonStr\n');
-      final responseCapability = _adapter is BleResponseCapability
-          ? _adapter as BleResponseCapability
-          : null;
+      final expectsAck = _adapter.hasReadableResponse;
       late final int payloadSize;
       try {
         payloadSize = await _adapter.currentPayloadSize();
@@ -274,9 +276,7 @@ class BleService implements BleConnection {
         _setStatus(BleStatus.connected);
         return false;
       }
-      if (responseCapability != null &&
-          !responseCapability.hasReadableResponse &&
-          bytes.length > payloadSize) {
+      if (!expectsAck && bytes.length > payloadSize) {
         _log('BLEサーバーが応答特性を持たず、分割データも再構成できないため送信を中止しました。MTUを確認してください。');
         _setStatus(BleStatus.connected);
         return false;
@@ -292,8 +292,7 @@ class BleService implements BleConnection {
         _setStatus(BleStatus.error);
         return false;
       }
-      if (responseCapability != null &&
-          !responseCapability.hasReadableResponse) {
+      if (!expectsAck) {
         _log('BLE書き込み完了。サーバーからACKが返らないため、ROSでの受信・計画結果はPC側で確認してください。');
         _setStatus(BleStatus.connected);
         return true;

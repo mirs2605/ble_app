@@ -64,9 +64,13 @@ abstract class BleAdapter {
     BleAdvertisementCallback? onAdvertisement,
   });
 
-  /// 接続＋サービス探索。要件（mission書き込み可・response読み取り可）を
-  /// 満たさなければ [BleAdapterFailure.requirementsUnmet] を投げる。
+  /// 接続＋サービス探索。mission Characteristicが書き込み不可なら
+  /// [BleAdapterFailure.requirementsUnmet] を投げる。
   Future<void> connect(String remoteId, {required Duration timeout});
+
+  /// 接続先がresponse Characteristicを読み取り可能か。falseのサーバーは
+  /// 書き込み専用で、ACKを返さない。
+  bool get hasReadableResponse;
 
   /// MTUネゴシエーション。未接続で呼ぶと
   /// [BleAdapterFailure.connectFailed] を投げる。
@@ -91,9 +95,4 @@ abstract class BleAdapter {
   Future<void> disconnect();
 
   Future<void> dispose();
-}
-
-/// Optional response support for write-only BLE servers.
-abstract interface class BleResponseCapability {
-  bool get hasReadableResponse;
 }

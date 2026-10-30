@@ -81,7 +81,9 @@ P0（Controller分割・Adapter分離・SSOT化・フォーム移管）は完了
 
 BLE契約（type文字列・GATT構成）は server・coverage と同時改訂が必要。全体像は `ws/TODO.md` §5。
 
-### 11. 現在位置・向きの入力と送信 [高/M]（送信開通 2026-10-01）
+### 11. 現在位置・向きの入力と送信 [高/M]（送信開通 2026-10-01 → 2026-10-23 廃止）
+- **廃止（2026-10-23）**: 開始地点設定機能（地図タブの開始地点モード・数値タブの開始地点フォーム・
+  `InitialPoseMission`・`BleConnection.sendInitialPose`）をアプリから削除した。以下は当時の記録。
 - 入力フォーム（x, y, theta）とモデル追加（案: `type: 'initial_pose'`＋`frame_id`＋pose のJSON）。
   - 制約は `CleaningZoneMission` と同一流儀（座標±1000、`frame_id='map'`）。
 - 送信経路は `BleConnection.sendCleaningZone` と同流儀で新API追加。

@@ -43,6 +43,11 @@ theme/  … 文言・色・ピル表示の一元定義
 
 - `MapEditMode` を pose に切り替え → `InitialPoseController` → `InitialPoseMission`（`type: initial_pose`）→ `sendInitialPose`。
 
+### 定時清掃の予約
+
+- 地図タブの時計ボタン → `ScheduleDialog`（時刻・曜日）→ `BleHomeController.sendSchedule` → `BleConnection.sendCleaningSchedule`（`type: cleaning_schedule`）。解除は `cancelSchedule`（`type: cleaning_schedule_cancel`）。
+- アプリは予定を送るだけ。時刻の判定と開始はロボット側のスケジューラが担う（未実装）。契約と責任分担は [../schedule-contract.md](../schedule-contract.md)。
+
 ### ロボット側（このリポジトリの外）
 
 - ロボット上の `ble_server`（mirs2605/ble_server）が BLE で受信し、ROS 2 の `/cleaning_zone`（PolygonStamped）に publish する。

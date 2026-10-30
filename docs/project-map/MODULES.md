@@ -20,6 +20,7 @@
 
 | ファイル | 役割 |
 |---|---|
+| `cleaning_schedule.dart` | `CleaningScheduleMission`（時刻・曜日・範囲の定時清掃。検証と JSON 化）、`CleaningScheduleCancel`。契約は [../schedule-contract.md](../schedule-contract.md) |
 | `cleaning_zone.dart` | `MapPoint`、`CleaningZoneMission`（JSON 化。閉路に変換。座標の範囲・頂点数（3点以上）・frame_id を検証） |
 | `initial_pose.dart` | `InitialPoseMission`（x, y, theta の JSON と検証） |
 | `map_config.dart` | `MapConfig`（画像・解像度・原点）、`BuiltinMaps`（学生玄関・MIRS の組み込み地図） |
@@ -48,7 +49,8 @@
 | `ble_tabs.dart` ★501 | `BleHomeTab`（地図）、`BleValuesTab`（4点の数値入力・開始地点フォーム）、`BleLogsTab` |
 | `map_selection_area.dart` ★585 | 地図の描画、ジェスチャー、拡大鏡、範囲・開始地点の Painter |
 | `map_management_button.dart` ★347 | 地図の切替・追加・削除ダイアログ |
-| `map_selection_actions.dart` / `bottom_send_action.dart` / `mission_send_button.dart` | 送信・クリア操作の UI |
+| `map_selection_actions.dart` / `bottom_send_action.dart` / `mission_send_button.dart` | 送信・クリア・定時清掃ボタンの UI |
+| `schedule_dialog.dart` | 定時清掃の設定ダイアログ（時刻・曜日・予約・解除） |
 | `status_notification_bar.dart` / `ble_status_indicator.dart` | 通知バー・接続状態のピル（`SelectedTabIcon` もここ） |
 | `icon_tab_navigation.dart` / `polygon_form.dart` / `permission_settings_button.dart` / `frosted_glass.dart` | 小さな UI 部品 |
 | `floating_action_controls.dart` | ボタンをまとめて export するだけのファイル |

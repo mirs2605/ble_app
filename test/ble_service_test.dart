@@ -34,6 +34,9 @@ class FakeBleAdapter implements BleAdapter {
   List<int> response = const [65, 67, 75];
   BleAdapterException? readError;
 
+  @override
+  bool hasReadableResponse = true;
+
   final linkLossController = StreamController<void>.broadcast();
 
   int findCalls = 0;
@@ -248,6 +251,44 @@ void main() {
     expect(decoded, contains('cleaning_zone'));
     // チャンク分割がMTUペイロードサイズを守っている。
     expect(adapter.written!.every((c) => c.length <= 20), isTrue);
+  });
+
+  test('応答特性のないサーバーには書き込みのみで成功とする', () async {
+    final adapter = FakeBleAdapter()
+      ..hasReadableResponse = false
+      ..mtu = const BleMtuInfo(
+        mtu: 517,
+        payloadSize: 512,
+        requested: true,
+        requestFailed: false,
+      );
+    final statuses = <BleStatus>[];
+    final service = buildService(adapter, [], statuses);
+    addTearDown(service.dispose);
+
+    await service.scanAndConnect();
+    final sent = await service.sendCleaningZone(
+      const CleaningZoneMission(polygon: _quad),
+    );
+
+    expect(sent, isTrue);
+    expect(statuses.last, BleStatus.connected);
+    expect(adapter.writeCalls, 1);
+    expect(adapter.readCalls, 0);
+  });
+
+  test('応答特性のないサーバーへ分割が必要な送信は中止する', () async {
+    final adapter = FakeBleAdapter()..hasReadableResponse = false;
+    final service = buildService(adapter, [], []);
+    addTearDown(service.dispose);
+
+    await service.scanAndConnect();
+    final sent = await service.sendCleaningZone(
+      const CleaningZoneMission(polygon: _quad),
+    );
+
+    expect(sent, isFalse);
+    expect(adapter.writeCalls, 0);
   });
 
   test('応答拒否でエラーになる', () async {

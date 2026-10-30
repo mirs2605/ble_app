@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/app_notice.dart';
-import '../services/ble_service.dart';
+import '../services/ble_connection.dart';
 
 /// 画面に表示する日本語文言の集約ポイント。
 /// ControllerやWidgetに文字列リテラルを散らばらせないための疎結合層。
@@ -12,13 +12,13 @@ abstract final class AppStrings {
   static const invalidRange = '清掃範囲が不正です';
   static const sendDone = '送信完了';
   static const sendFailed = '送信に失敗しました';
+  static const invalidSchedule = '定時清掃の設定が不正です';
+  static const scheduleDone = '定時清掃を予約しました';
+  static const scheduleCanceled = '定時清掃を解除しました';
   static const autoConnectStarted = 'BLE 自動接続を開始';
   static const permissionMissing = 'パーミッション不足';
   static const settingsOpenFailed = 'アプリ設定を開けませんでした';
   static const encloseRange = '範囲を囲ってください';
-  static const specifyPose = '開始点をタップし、離さずドラッグで向きを指定';
-  static const poseSet = '開始地点を設定しました';
-  static const invalidInitialPose = '開始地点の値が不正です';
 
   // --- ログ（Controller経由） ---
   static const autoConnectGuide = '📡 BLE サーバーに近づくと自動で接続します';
@@ -30,9 +30,14 @@ abstract final class AppStrings {
   static const sent = '送信完了';
   static const sendTooltip = '送信';
   static const clearTooltip = '範囲を削除';
-  static const clearPoseTooltip = '開始地点を削除';
-  static const poseModeTooltip = '開始地点モード';
-  static const poseModeExitTooltip = '範囲モードに戻る';
+  static const scheduleTooltip = '定時清掃を設定';
+  static const scheduleTitle = '定時清掃';
+  static const scheduleHelp = 'ロボットが決まった時刻に、囲んだ範囲の清掃を始めます。予定はロボットに保存されます。';
+  static const scheduleTimeLabel = '開始時刻';
+  static const scheduleWeekdaysLabel = '曜日';
+  static const scheduleReserve = '予約';
+  static const scheduleCancelAction = '予約を解除';
+  static const weekdayLabels = ['月', '火', '水', '木', '金', '土', '日'];
   static const mapsTitle = '地図管理';
   static const addMap = 'スマホから地図を追加';
   static const mapDetailsTitle = '地図情報';
@@ -62,7 +67,6 @@ abstract final class AppStrings {
 
   // --- タブ見出し ---
   static const cleaningAreaTitle = '清掃範囲 (map座標, m)';
-  static const initialPoseTitle = '開始地点 (map座標, m)';
   static const logsTitle = 'ログ';
 
   /// 接続状態の表示ラベル。
@@ -84,23 +88,25 @@ extension AppNoticePresentation on AppNotice {
     AppNotice.invalidRange => AppStrings.invalidRange,
     AppNotice.sendDone => AppStrings.sendDone,
     AppNotice.sendFailed => AppStrings.sendFailed,
+    AppNotice.invalidSchedule => AppStrings.invalidSchedule,
+    AppNotice.scheduleDone => AppStrings.scheduleDone,
+    AppNotice.scheduleCanceled => AppStrings.scheduleCanceled,
     AppNotice.autoConnectStarted => AppStrings.autoConnectStarted,
     AppNotice.permissionMissing => AppStrings.permissionMissing,
     AppNotice.settingsOpenFailed => AppStrings.settingsOpenFailed,
     AppNotice.encloseRange => AppStrings.encloseRange,
-    AppNotice.specifyPose => AppStrings.specifyPose,
-    AppNotice.invalidInitialPose => AppStrings.invalidInitialPose,
   };
 
   IconData get icon => switch (this) {
     AppNotice.specifyRange ||
     AppNotice.invalidRange ||
-    AppNotice.invalidInitialPose => Icons.warning_amber_rounded,
-    AppNotice.sendDone => Icons.check_circle,
+    AppNotice.invalidSchedule => Icons.warning_amber_rounded,
+    AppNotice.sendDone ||
+    AppNotice.scheduleDone ||
+    AppNotice.scheduleCanceled => Icons.check_circle,
     AppNotice.sendFailed || AppNotice.settingsOpenFailed => Icons.error_outline,
     AppNotice.autoConnectStarted => Icons.bluetooth_searching,
     AppNotice.permissionMissing => Icons.settings,
     AppNotice.encloseRange => Icons.draw_outlined,
-    AppNotice.specifyPose => Icons.my_location,
   };
 }

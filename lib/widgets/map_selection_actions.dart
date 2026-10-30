@@ -12,15 +12,8 @@ class MapSelectionActions extends StatelessWidget {
   final bool canSend;
   final VoidCallback onClear;
   final VoidCallback onSend;
+  final VoidCallback? onSchedule;
   final SendButtonState sendButtonState;
-
-  /// 開始地点モード切替ボタンを出すか（地図タブでは常時）。
-  final bool showPoseMode;
-
-  /// 開始地点モード中か。true時はクリア・送信がpose用になる。
-  final bool poseModeActive;
-  final VoidCallback? onPoseMode;
-  final String clearTooltip;
 
   const MapSelectionActions({
     super.key,
@@ -29,24 +22,20 @@ class MapSelectionActions extends StatelessWidget {
     required this.canSend,
     required this.onClear,
     required this.onSend,
+    this.onSchedule,
     this.sendButtonState = SendButtonState.ready,
-    this.showPoseMode = false,
-    this.poseModeActive = false,
-    this.onPoseMode,
-    this.clearTooltip = AppStrings.clearTooltip,
   });
 
   @override
   Widget build(BuildContext context) {
     final clearStyle = PillStyles.destructive();
-    final poseStyle = PillStyles.destructive();
     return SafeArea(
       child: Stack(
         children: [
           if (showClear)
             Align(
               alignment: Alignment.bottomLeft,
-                child: Padding(
+              child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: FrostedGlass(
                   gradient: clearStyle.gradient,
@@ -57,7 +46,7 @@ class MapSelectionActions extends StatelessWidget {
                   child: FloatingActionButton(
                     heroTag: 'clear-selection',
                     onPressed: onClear,
-                    tooltip: clearTooltip,
+                    tooltip: AppStrings.clearTooltip,
                     backgroundColor: Colors.transparent,
                     foregroundColor: clearStyle.foreground,
                     elevation: 0,
@@ -66,30 +55,16 @@ class MapSelectionActions extends StatelessWidget {
                 ),
               ),
             ),
-          if (showPoseMode)
+          if (onSchedule != null)
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: FrostedGlass(
-                  gradient: poseStyle.gradient,
-                  borderRadius: poseStyle.borderRadius,
-                  border: Border.fromBorderSide(
-                    BorderSide(color: poseStyle.borderColor, width: 1),
-                  ),
-                  child: FloatingActionButton(
-                    heroTag: 'pose-mode',
-                    onPressed: onPoseMode,
-                    tooltip: poseModeActive
-                        ? AppStrings.poseModeExitTooltip
-                        : AppStrings.poseModeTooltip,
-                    backgroundColor: Colors.transparent,
-                    foregroundColor: poseStyle.foreground,
-                    elevation: 0,
-                    child: Icon(
-                      poseModeActive ? Icons.close : Icons.my_location,
-                    ),
-                  ),
+                child: FloatingActionButton(
+                  heroTag: 'schedule',
+                  onPressed: onSchedule,
+                  tooltip: AppStrings.scheduleTooltip,
+                  child: const Icon(Icons.schedule),
                 ),
               ),
             ),
