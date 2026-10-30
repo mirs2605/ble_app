@@ -8,10 +8,11 @@ enum AppNotice {
   invalidRange,
   sendDone,
   sendFailed,
+  invalidSchedule,
+  scheduleDone,
+  scheduleCanceled,
   autoConnectStarted,
   permissionMissing,
   settingsOpenFailed,
   encloseRange,
-  specifyPose,
-  invalidInitialPose,
 }

@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../services/ble_service.dart';
+import '../services/ble_connection.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_strings.dart';
 import '../theme/pill_style.dart';

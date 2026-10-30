@@ -1,24 +1,20 @@
 import 'package:flutter/material.dart';
 
 import 'controllers/ble_home_controller.dart';
-import 'services/pc_simulation_connection.dart';
-import 'models/map_edit_mode.dart';
 import 'services/map_config_repository.dart';
 import 'theme/app_colors.dart';
 import 'widgets/ble_tabs.dart';
 import 'widgets/icon_tab_navigation.dart';
+import 'widgets/schedule_dialog.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await MapConfigRepository.init();
-  const simulationMode = bool.fromEnvironment('SIMULATION_MODE');
-  runApp(MirsBleApp(simulationMode: simulationMode));
+  runApp(const MirsBleApp());
 }
 
 class MirsBleApp extends StatelessWidget {
-  const MirsBleApp({super.key, this.simulationMode = false});
-
-  final bool simulationMode;
+  const MirsBleApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -32,15 +28,13 @@ class MirsBleApp extends StatelessWidget {
         useMaterial3: true,
       ),
       themeMode: ThemeMode.dark,
-      home: BleHomePage(simulationMode: simulationMode),
+      home: const BleHomePage(),
     );
   }
 }
 
 class BleHomePage extends StatefulWidget {
-  const BleHomePage({super.key, required this.simulationMode});
-
-  final bool simulationMode;
+  const BleHomePage({super.key});
 
   @override
   State<BleHomePage> createState() => _BleHomePageState();
@@ -52,12 +46,7 @@ class _BleHomePageState extends State<BleHomePage> {
   @override
   void initState() {
     super.initState();
-    _controller = BleHomeController(
-      useSimulation: widget.simulationMode,
-      connectionFactory: widget.simulationMode
-          ? PcSimulationConnection.new
-          : null,
-    );
+    _controller = BleHomeController();
   }
 
   @override
@@ -82,8 +71,6 @@ class _BleHomePageState extends State<BleHomePage> {
                 selectedMapPoints: _controller.selectedMapPoints,
                 onSendPolygon: _controller.sendPolygon,
                 canSendPolygon: _controller.canSendPolygon,
-                onSendInitialPose: _controller.sendInitialPose,
-                canSendInitialPose: _controller.canSendInitialPose,
                 onStatusPressed: _controller.showStatusAnnouncement,
                 sendButtonState: _controller.sendButtonState,
               ),
@@ -104,20 +91,22 @@ class _BleHomePageState extends State<BleHomePage> {
                 sendCompleted: _controller.sendCompleted,
                 sendButtonState: _controller.sendButtonState,
                 canSend: _controller.canSendSelectedMap,
-                editMode: _controller.editMode,
-                initialPose: _controller.selectedInitialPose,
-                onPoseChanged: _controller.setInitialPose,
-                onPoseModePressed: _controller.editMode == MapEditMode.polygon
-                    ? _controller.enterPoseMode
-                    : _controller.exitPoseMode,
-                onClearPose: _controller.clearInitialPose,
-                onSendPose: _controller.sendPosePressed,
-                canSendPose: _controller.canSendSelectedPose,
                 activeMap: _controller.activeMapConfig,
                 maps: _controller.allMaps,
                 onMapSelected: _controller.switchMap,
                 onMapAdded: _controller.addMap,
                 onMapDeleted: _controller.deleteMap,
+                onScheduleResult: (result) => switch (result) {
+                  ScheduleReserve(:final time, :final weekdays) =>
+                    _controller.sendSchedule(
+                      hour: time.hour,
+                      minute: time.minute,
+                      weekdays: weekdays,
+                    ),
+                  ScheduleCancel() => _controller.cancelSchedule(),
+                },
+                canReserveSchedule: _controller.canReserveSchedule,
+                canCancelSchedule: _controller.canCancelSchedule,
               ),
               BleLogsTab(
                 logs: _controller.logs,
