@@ -104,6 +104,7 @@ class _BleHomePageState extends State<BleHomePage> {
                 onMapAdded: _controller.addMap,
                 onMapDeleted: _controller.deleteMap,
                 scheduleHost: _controller.scheduleDialogHost,
+                mapReceiveHost: _controller.mapReceiveHost,
               ),
               BleLogsTab(
                 logs: _controller.logs,

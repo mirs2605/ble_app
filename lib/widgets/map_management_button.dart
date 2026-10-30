@@ -4,6 +4,27 @@ import '../models/map_config.dart';
 import '../services/map_image_storage.dart';
 import '../theme/app_strings.dart';
 
+/// 地図管理ダイアログから「ロボットの地図を受信」を呼ぶための窓口。
+/// Controller の型を画面に持ち込まないための薄いインターフェース。
+class MapReceiveHost {
+  const MapReceiveHost({
+    required this.listenable,
+    required this.canReceive,
+    required this.progress,
+    required this.onReceive,
+  });
+
+  /// 受信の状態が変わったときに通知される。
+  final Listenable listenable;
+  final bool Function() canReceive;
+
+  /// 受信の進み具合（0〜1）。受信中でなければ null。
+  final double? Function() progress;
+
+  /// 受信して地図を登録する。成功したら true。
+  final Future<bool> Function() onReceive;
+}
+
 class MapManagementButton extends StatelessWidget {
   const MapManagementButton({
     super.key,
@@ -13,6 +34,7 @@ class MapManagementButton extends StatelessWidget {
     required this.onAdd,
     required this.onDelete,
     this.imageStorage,
+    this.receiveHost,
   });
 
   final MapConfig activeMap;
@@ -23,6 +45,9 @@ class MapManagementButton extends StatelessWidget {
 
   /// 地図画像の選択・保存・削除。未指定なら端末のギャラリーとアプリ領域を使う。
   final MapImageStorage? imageStorage;
+
+  /// ロボットからの地図受信の窓口。null なら受信ボタンを出さない。
+  final MapReceiveHost? receiveHost;
 
   @override
   Widget build(BuildContext context) => OutlinedButton.icon(
@@ -35,6 +60,7 @@ class MapManagementButton extends StatelessWidget {
         onAdd: onAdd,
         onDelete: onDelete,
         imageStorage: imageStorage ?? MapImageStorage(),
+        receiveHost: receiveHost,
       ),
     ),
     icon: const Icon(Icons.map_outlined),
@@ -50,6 +76,7 @@ class _MapManagementDialog extends StatefulWidget {
     required this.onAdd,
     required this.onDelete,
     required this.imageStorage,
+    this.receiveHost,
   });
 
   final MapConfig activeMap;
@@ -58,6 +85,7 @@ class _MapManagementDialog extends StatefulWidget {
   final Future<void> Function(MapConfig) onAdd;
   final Future<void> Function(MapConfig) onDelete;
   final MapImageStorage imageStorage;
+  final MapReceiveHost? receiveHost;
 
   @override
   State<_MapManagementDialog> createState() => _MapManagementDialogState();
@@ -122,6 +150,53 @@ class _MapManagementDialogState extends State<_MapManagementDialog> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  Future<void> _receive(MapReceiveHost host) async {
+    final ok = await host.onReceive();
+    if (!mounted) return;
+    if (ok) {
+      Navigator.of(context).pop();
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text(AppStrings.mapReceiveFailed)));
+  }
+
+  Widget _receiveButton(MapReceiveHost host) => ListenableBuilder(
+    listenable: host.listenable,
+    builder: (context, _) {
+      final progress = host.progress();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          OutlinedButton.icon(
+            key: const Key('map-receive'),
+            onPressed: host.canReceive() ? () => _receive(host) : null,
+            icon: const Icon(Icons.bluetooth_searching),
+            label: const Text(AppStrings.receiveMap),
+          ),
+          if (progress != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: LinearProgressIndicator(
+                key: const Key('map-receive-progress'),
+                value: progress,
+              ),
+            )
+          else if (!host.canReceive())
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                AppStrings.receiveMapNeedsConnection,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+        ],
+      );
+    },
+  );
 
   Future<void> _delete(MapConfig map) async {
     final confirmed = await showDialog<bool>(
@@ -200,6 +275,10 @@ class _MapManagementDialogState extends State<_MapManagementDialog> {
                     icon: const Icon(Icons.add_photo_alternate_outlined),
                     label: const Text(AppStrings.addMap),
                   ),
+                  if (widget.receiveHost != null) ...[
+                    const SizedBox(height: 8),
+                    _receiveButton(widget.receiveHost!),
+                  ],
                 ],
               ),
       ),

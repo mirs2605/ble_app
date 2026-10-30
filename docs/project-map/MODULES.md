@@ -14,6 +14,7 @@
 |---|---|
 | `ble_home_controller.dart` ★340 | 画面の facade。接続状態・権限・地図・選択・送信・ログ・通知を公開する |
 | `schedule_coordinator.dart` | 定時清掃の予定管理と同期の協調役。SQLite永続化・BLE同期・ダイアログへの窓口提供 |
+| `robot_map_receiver.dart` | ロボットの SLAM 地図を BLE で受け取って登録する協調役（情報→分割受信→PNG化→寸法検証→保存→登録、進捗）。契約は [../map-transfer-contract.md](../map-transfer-contract.md) |
 | `send_mission_tracker.dart` | 送信の進行状況 → `SendButtonState` |
 | `notice_board.dart` | 一定時間だけ値を表示する汎用ボード（`TimerScheduler` を注入可能） |
 
@@ -22,6 +23,7 @@
 | ファイル | 役割 |
 |---|---|
 | `schedule_entry.dart` | `ScheduleEntry`（定時清掃の予定1件。id・revision・deleted を持ち、JSON / SQLite の行へ往復。検証）。契約は [../schedule-contract.md](../schedule-contract.md) |
+| `robot_map.dart` | `RobotMapInfo`（ロボットが渡す地図の説明。検証）と `crc32` |
 | `cleaning_zone.dart` | `MapPoint`、`CleaningZoneMission`（JSON 化。閉路に変換。座標の範囲・頂点数（3点以上）・frame_id を検証） |
 | `initial_pose.dart` | `InitialPoseMission`（x, y, theta の JSON と検証） |
 | `map_config.dart` | `MapConfig`（画像・解像度・原点）、`BuiltinMaps`（学生玄関・MIRS の組み込み地図） |

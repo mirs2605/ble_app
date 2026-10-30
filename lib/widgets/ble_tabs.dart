@@ -42,6 +42,10 @@ class BleHomeTab extends StatelessWidget {
 
   /// 定時清掃ダイアログの窓口。null なら定時清掃ボタンを出さない。
   final ScheduleDialogHost? scheduleHost;
+
+  /// ロボットの地図を受信するための窓口。null なら受信ボタンを出さない。
+  final MapReceiveHost? mapReceiveHost;
+
   const BleHomeTab({
     super.key,
     required this.mapSelection,
@@ -65,6 +69,7 @@ class BleHomeTab extends StatelessWidget {
     required this.onMapAdded,
     required this.onMapDeleted,
     this.scheduleHost,
+    this.mapReceiveHost,
   });
 
   @override
@@ -90,6 +95,7 @@ class BleHomeTab extends StatelessWidget {
               onSelect: onMapSelected,
               onAdd: onMapAdded,
               onDelete: onMapDeleted,
+              receiveHost: mapReceiveHost,
             ),
           ),
         ),

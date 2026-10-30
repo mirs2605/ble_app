@@ -56,6 +56,13 @@ abstract final class AppStrings {
       '🔄 予定を同期しました（受信 $stored 件 / 送信 $pushed 件）';
   static const mapsTitle = '地図管理';
   static const addMap = 'スマホから地図を追加';
+  static const receiveMap = 'ロボットから地図を受信';
+  static const receiveMapNeedsConnection = 'ロボットに接続すると受信できます';
+  static const mapReceived = '地図を受信しました';
+  static const mapReceiveFailed = '地図を受信できませんでした（詳細はログ）';
+  static String mapReceiveStart(String name, int size) =>
+      '📥 地図「$name」を受信します ($size bytes)';
+  static String mapReceiveDone(String name) => '✅ 地図「$name」を登録しました';
   static const mapDetailsTitle = '地図情報';
   static const mapName = '地図名';
   static const mapResolution = '解像度 (m/px)';

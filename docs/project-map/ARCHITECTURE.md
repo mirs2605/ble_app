@@ -52,6 +52,7 @@ theme/  … 文言・色・ピル表示の一元定義
 - 地図タブの時計ボタン → `ScheduleDialog` → `ScheduleDialogHost`（`ScheduleCoordinator` が提供）→ `ScheduleCoordinator`（保存 → 接続中なら `ScheduleSyncService.sync()`）。接続が確立した直後にも自動で同期する。
 - BLE: `schedule_pull`（1件ずつ取得。応答は Response Characteristic に JSON）／`schedule_upsert`（1件反映）。
 - 時刻の判定と開始はロボット側のスケジューラが担う（未実装）。契約と責任分担は [../schedule-contract.md](../schedule-contract.md)。
+- SLAM の地図の受信: 地図管理ダイアログの「ロボットから地図を受信」→ `RobotMapReceiver` が `map_info` / `map_chunk` で BLE から分割受信し、PGM は PNG に変換して地図として登録する（ロボット側は未実装）。契約は [../map-transfer-contract.md](../map-transfer-contract.md)。
 
 ### ロボット側（このリポジトリの外）
 

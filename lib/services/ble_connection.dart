@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import '../models/cleaning_zone.dart';
+import '../models/robot_map.dart';
 import '../models/schedule_entry.dart';
 
 /// BLE接続の状態
@@ -30,6 +33,16 @@ abstract class BleConnection {
 
   /// 予定1件（削除済みを含む）をロボットへ送る。
   Future<bool> pushSchedule(ScheduleEntry entry);
+
+  /// ロボットが渡せる地図の説明を取得する。失敗は null。
+  Future<RobotMapInfo?> pullMapInfo();
+
+  /// [info] の地図データを分割して受け取る。失敗・不一致は null。
+  /// [onProgress] には受信済みの bytes と全体の bytes を渡す。
+  Future<Uint8List?> pullMapData(
+    RobotMapInfo info, {
+    void Function(int received, int total)? onProgress,
+  });
 
   Future<void> dispose();
 }

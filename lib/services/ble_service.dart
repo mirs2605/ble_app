@@ -2,8 +2,11 @@
 // このクラスは状態遷移・ログ・再試行方針に徹する。
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
 
 import '../models/cleaning_zone.dart';
+import '../models/robot_map.dart';
 import '../models/schedule_entry.dart';
 import 'ble_adapter.dart';
 import 'ble_connection.dart';
@@ -61,6 +64,10 @@ class BleService implements BleConnection {
   static const connectTimeout = Duration(seconds: 10);
   static const responseTimeout = Duration(seconds: 5);
   static const maxPayloadBytes = 4096;
+
+  /// 地図データを1回に受け取る生データの大きさ [bytes]。base64にすると約344文字で、
+  /// JSONの枠を足しても1回の読み取り上限（約512 bytes）に収まる。
+  static const mapChunkBytes = 256;
 
   final BleAdapter _adapter;
   StreamSubscription<void>? _linkLossSub;
@@ -278,6 +285,92 @@ class BleService implements BleConnection {
     }
     return entries;
   }
+
+  /// 地図の説明を取得する（`map_info`）。応答は Response のJSON。
+  @override
+  Future<RobotMapInfo?> pullMapInfo() async {
+    Map<String, dynamic>? reply;
+    final ok = await _sendJson(
+      {'type': 'map_info'},
+      label: '地図の情報',
+      acceptResponse: (bytes) {
+        reply = _decodeJsonObject(bytes);
+        return reply != null;
+      },
+    );
+    final json = reply;
+    if (!ok || json == null) {
+      _log('❌ ロボットの地図情報を取得できませんでした。');
+      return null;
+    }
+    try {
+      return RobotMapInfo.fromJson(json);
+    } on FormatException catch (e) {
+      _log('❌ 地図情報が不正です: ${e.message}');
+      return null;
+    }
+  }
+
+  /// 地図データを [mapChunkBytes] ずつ取得する（`map_chunk`）。
+  /// 応答は `{"offset":N,"data":"<base64>"}`。1回の読み取りが約512 bytesまでのため、
+  /// 生データは小さく区切る。CRC32が付いていれば全体を検証する。
+  @override
+  Future<Uint8List?> pullMapData(
+    RobotMapInfo info, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final data = BytesBuilder(copy: false);
+    var received = 0;
+    onProgress?.call(0, info.size);
+    while (received < info.size) {
+      final length = min(mapChunkBytes, info.size - received);
+      final offset = received;
+      Uint8List? chunk;
+      final ok = await _sendJson(
+        {'type': 'map_chunk', 'offset': offset, 'length': length},
+        label: '地図データ',
+        quiet: true,
+        acceptResponse: (bytes) {
+          chunk = _decodeMapChunk(bytes, offset: offset, maxLength: length);
+          return chunk != null;
+        },
+      );
+      final piece = chunk;
+      if (!ok || piece == null) {
+        _log('❌ 地図データの受信に失敗しました ($received/${info.size} bytes)。');
+        return null;
+      }
+      data.add(piece);
+      received += piece.length;
+      onProgress?.call(received, info.size);
+    }
+    final bytes = data.takeBytes();
+    final expected = info.crc32;
+    if (expected != null && crc32(bytes) != expected) {
+      _log('❌ 地図データが壊れています（CRC32が一致しません）。');
+      return null;
+    }
+    return bytes;
+  }
+
+  static Uint8List? _decodeMapChunk(
+    List<int> bytes, {
+    required int offset,
+    required int maxLength,
+  }) {
+    final json = _decodeJsonObject(bytes);
+    if (json == null || json['offset'] != offset) return null;
+    final encoded = json['data'];
+    if (encoded is! String) return null;
+    try {
+      final chunk = base64Decode(encoded);
+      // 空・要求より長い応答は受け付けない（受信が進まず止まらなくなるため）。
+      return chunk.isEmpty || chunk.length > maxLength ? null : chunk;
+    } on FormatException {
+      return null;
+    }
+  }
+
   static Map<String, dynamic>? _decodeJsonObject(List<int> bytes) {
     try {
       final decoded = jsonDecode(utf8.decode(bytes));

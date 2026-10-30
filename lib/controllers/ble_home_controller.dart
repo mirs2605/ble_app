@@ -10,12 +10,15 @@ import '../models/send_button_state.dart';
 import '../services/ble_connection.dart';
 import '../services/ble_service.dart';
 import '../services/map_config_repository.dart';
+import '../services/map_image_storage.dart';
 import '../services/map_selection_controller.dart';
 import '../services/permission_gateway.dart';
 import '../services/schedule_repository.dart';
 import '../theme/app_strings.dart';
+import '../widgets/map_management_button.dart';
 import '../widgets/schedule_dialog.dart';
 import 'notice_board.dart';
+import 'robot_map_receiver.dart';
 import 'schedule_coordinator.dart';
 import 'send_mission_tracker.dart';
 
@@ -29,8 +32,10 @@ class BleHomeController extends ChangeNotifier {
     MapConfigRepository? mapRepository,
     ScheduleRepository? scheduleRepository,
     ScheduleCoordinator? scheduleCoordinator,
+    RobotMapReceiver? robotMapReceiver,
   }) : _permissions = permissionGateway ?? const DefaultPermissionGateway(),
        _mapRepo = mapRepository ?? MapConfigRepository.instance {
+    _robotMapReceiver = robotMapReceiver;
     _connection = (connectionFactory ?? BleService.new)(
       onLog: _addServiceLog,
       onStatusChanged: _handleStatusChanged,
@@ -60,6 +65,7 @@ class BleHomeController extends ChangeNotifier {
   final PermissionGateway _permissions;
   final MapConfigRepository _mapRepo;
   late final ScheduleCoordinator? _scheduleCoordinator;
+  RobotMapReceiver? _robotMapReceiver;
 
   /// 接続が確立している間 true。接続の確立直後に一度だけ同期するための印。
   bool _linkUp = false;
@@ -300,6 +306,34 @@ class BleHomeController extends ChangeNotifier {
   Future<void> syncSchedules({bool announce = true}) =>
       _scheduleCoordinator?.syncSchedules(announce: announce) ?? Future.value();
 
+  // ─────────────────────────────────────────
+  // ロボットの地図の受信（RobotMapReceiver へ委譲）
+  // ─────────────────────────────────────────
+
+  RobotMapReceiver get _mapReceiver => _robotMapReceiver ??= () {
+    final storage = MapImageStorage();
+    final receiver = RobotMapReceiver(
+      connection: _connection,
+      saveImage: storage.saveBytes,
+      deleteImage: storage.delete,
+      addMap: addMap,
+      isConnected: () => _status == BleStatus.connected,
+      onLog: addLog,
+    );
+    return receiver;
+  }();
+
+  /// 地図管理ダイアログに渡す、ロボットの地図を受信するための窓口。
+  MapReceiveHost get mapReceiveHost {
+    final receiver = _mapReceiver;
+    return MapReceiveHost(
+      listenable: Listenable.merge([receiver, this]),
+      canReceive: () => receiver.canReceive,
+      progress: () => receiver.busy ? receiver.progress : null,
+      onReceive: receiver.receive,
+    );
+  }
+
   /// 送信ボタン活性条件。数値タブはフォーム値で判定する。
   bool canSendPolygon(List<MapPoint> polygon) =>
       _status == BleStatus.connected && _sendTracker.canSend(polygon);
@@ -389,6 +423,7 @@ class BleHomeController extends ChangeNotifier {
     _connection.stopAutoConnect();
     unawaited(_connection.dispose());
     _scheduleCoordinator?.dispose();
+    _robotMapReceiver?.dispose();
     _statusBoard.dispose();
     _noticeBoard.dispose();
     super.dispose();

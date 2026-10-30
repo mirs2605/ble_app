@@ -1,9 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mirs_ble_app/controllers/ble_home_controller.dart';
 import 'package:mirs_ble_app/models/app_notice.dart';
 import 'package:mirs_ble_app/models/cleaning_zone.dart';
 import 'package:mirs_ble_app/models/map_config.dart';
+import 'package:mirs_ble_app/models/robot_map.dart';
 import 'package:mirs_ble_app/models/schedule_entry.dart';
 import 'package:mirs_ble_app/models/send_button_state.dart';
 import 'package:mirs_ble_app/services/ble_connection.dart';
@@ -56,6 +59,23 @@ class FakeBleConnection implements BleConnection {
   Future<bool> pushSchedule(ScheduleEntry entry) async {
     pushed.add(entry);
     return pushResult;
+  }
+
+  /// ロボットの地図（pullMapInfo / pullMapData が返す）。null なら取得失敗。
+  RobotMapInfo? mapInfo;
+  Uint8List? mapData;
+
+  @override
+  Future<RobotMapInfo?> pullMapInfo() async => mapInfo;
+
+  @override
+  Future<Uint8List?> pullMapData(
+    RobotMapInfo info, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final data = mapData;
+    if (data != null) onProgress?.call(data.length, info.size);
+    return data;
   }
 
   @override
