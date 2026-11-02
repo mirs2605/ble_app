@@ -9,6 +9,9 @@ class MapSelectionController {
   Offset? selectionStart;
   int? activeHandleIndex;
 
+  /// フリーハンドで囲んだときに生成する多角形の頂点数。
+  int vertexCount = MapGeometry.freehandPolygonVertexCount;
+
   bool get hasSelection => points.length >= CleaningZoneMission.minPoints;
 
   void clear() {
@@ -43,7 +46,12 @@ class MapSelectionController {
     Size size, [
     MapConfig? config,
   ]) {
-    final polygon = MapGeometry.polygonFromPath(path, size, config);
+    final polygon = MapGeometry.polygonFromPath(
+      path,
+      size,
+      config,
+      vertexCount,
+    );
     if (polygon != null) {
       points = polygon;
     }

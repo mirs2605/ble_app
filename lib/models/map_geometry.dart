@@ -7,6 +7,8 @@ import 'map_config.dart';
 
 class MapGeometry {
   static const int freehandPolygonVertexCount = 6;
+  static const int minFreehandVertexCount = CleaningZoneMission.minPoints;
+  static const int maxFreehandVertexCount = 12;
 
   /// デフォルトマップ定数（widget_testおよびMapConfig未渡し時の後方互換用）。
   static const double resolution = BuiltinMaps.gakuseigenkanResolution;
@@ -86,6 +88,7 @@ class MapGeometry {
     List<Offset> path,
     Size size, [
     MapConfig? config,
+    int vertexCount = freehandPolygonVertexCount,
   ]) {
     if (path.length < 2) return null;
     const circumscriptionScale = 1.05;
@@ -93,16 +96,16 @@ class MapGeometry {
     final center =
         path.fold<Offset>(Offset.zero, (sum, point) => sum + point) /
         path.length.toDouble();
-    final sectors = List<Offset?>.filled(freehandPolygonVertexCount, null);
-    final sectorDistances = List<double>.filled(freehandPolygonVertexCount, -1);
-    final sectorAngle = math.pi * 2 / freehandPolygonVertexCount;
+    final sectors = List<Offset?>.filled(vertexCount, null);
+    final sectorDistances = List<double>.filled(vertexCount, -1);
+    final sectorAngle = math.pi * 2 / vertexCount;
 
     for (final point in path) {
       final angle = math.atan2(point.dy - center.dy, point.dx - center.dx);
       final normalizedAngle = (angle + math.pi * 2) % (math.pi * 2);
       final sector = (normalizedAngle / sectorAngle).floor().clamp(
         0,
-        freehandPolygonVertexCount - 1,
+        vertexCount - 1,
       );
       final distance = (point - center).distanceSquared;
       if (distance > sectorDistances[sector]) {
@@ -112,7 +115,7 @@ class MapGeometry {
     }
 
     final vertices = <Offset>[...sectors.whereType<Offset>()];
-    if (vertices.length < freehandPolygonVertexCount ||
+    if (vertices.length < vertexCount ||
         vertices.map((point) => (point - center).distance).reduce(math.min) <
             4) {
       return null;

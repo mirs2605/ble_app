@@ -126,7 +126,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                 _mapConfig,
               );
               if (_selectionController.points.length >=
-                  MapGeometry.freehandPolygonVertexCount) {
+                  _selectionController.vertexCount) {
                 if (hit != null) {
                   setState(() {
                     _selectionController.activeHandleIndex = hit;
@@ -197,7 +197,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
             }
             if (_selectionController.selectionStart != null &&
                 _selectionController.points.length <
-                    MapGeometry.freehandPolygonVertexCount) {
+                    _selectionController.vertexCount) {
               setState(() => _freehandPath.add(local));
               _reportIdle();
             }
@@ -219,9 +219,11 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
               _selectionController.selectionStart = null;
               if (!wasTransforming &&
                   _selectionController.points.length ==
-                      MapGeometry.freehandPolygonVertexCount &&
+                      _selectionController.vertexCount &&
                   _selectionController.activeHandleIndex == null) {
-                widget.onLog?.call('🖐️ 6点の範囲を選択しました');
+                widget.onLog?.call(
+                  '🖐️ ${_selectionController.vertexCount}点の範囲を選択しました',
+                );
               }
               _selectionController.activeHandleIndex = null;
               _freehandPath.clear();
