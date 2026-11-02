@@ -90,6 +90,8 @@ class _BleHomePageState extends State<BleHomePage> {
                     _controller.permissionsPermanentlyDenied,
                 onMapChanged: _controller.setSelectedMapPoints,
                 onSelectionIdleChanged: _controller.setSelectionIdle,
+                onVertexCountChanged: _controller.setVertexCount,
+                onShapeTemplateSelected: _controller.applyShapeTemplate,
                 onLog: _controller.addLog,
                 onPermissionSettings: _controller.openPermissionSettings,
                 onClearSelection: _controller.clearSelection,

@@ -5,7 +5,9 @@ import 'package:flutter/widgets.dart';
 import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
 import '../models/map_config.dart';
+import '../models/map_geometry.dart';
 import '../models/schedule_entry.dart';
+import '../models/shape_template.dart';
 import '../models/send_button_state.dart';
 import '../services/ble_connection.dart';
 import '../services/ble_service.dart';
@@ -186,6 +188,24 @@ class BleHomeController extends ChangeNotifier {
     mapSelection.points = List<MapPoint>.from(points);
     _sendTracker.resetProgress();
     notifyListeners();
+  }
+
+  /// フリーハンド選択の頂点数を変更する。既存の選択は点数が合わなくなるため消す。
+  void setVertexCount(int count) {
+    final next = count.clamp(
+      MapGeometry.minFreehandVertexCount,
+      MapGeometry.maxFreehandVertexCount,
+    );
+    if (next == mapSelection.vertexCount) return;
+    mapSelection.vertexCount = next;
+    clearSelection();
+  }
+
+  /// ひな形の形を選択範囲として地図中央に置く。頂点数もひな形に合わせる。
+  void applyShapeTemplate(ShapeTemplate template) {
+    mapSelection.vertexCount = template.vertexCount;
+    setSelectedMapPoints(template.placeOn(_activeMapConfig));
+    addLog('⭐ 「${template.label}」のひな形を配置しました');
   }
 
   void clearSelection() {

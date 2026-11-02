@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
 import '../models/map_config.dart';
+import '../models/map_geometry.dart';
 import '../models/send_button_state.dart';
+import '../models/shape_template.dart';
 import '../services/ble_connection.dart';
 import '../services/map_selection_controller.dart';
 import '../theme/app_colors.dart';
@@ -33,6 +35,12 @@ class BleHomeTab extends StatelessWidget {
   final bool sendCompleted;
   final bool canSend;
   final SendButtonState sendButtonState;
+
+  /// 点数スライダーの変更通知。null ならスライダーを出さない。
+  final ValueChanged<int>? onVertexCountChanged;
+
+  /// ひな形（星など）の選択通知。null ならひな形ボタンを出さない。
+  final ValueChanged<ShapeTemplate>? onShapeTemplateSelected;
 
   final MapConfig activeMap;
   final List<MapConfig> maps;
@@ -63,6 +71,8 @@ class BleHomeTab extends StatelessWidget {
     required this.canSend,
     required this.sendButtonState,
     this.onSelectionIdleChanged,
+    this.onVertexCountChanged,
+    this.onShapeTemplateSelected,
     required this.activeMap,
     required this.maps,
     required this.onMapSelected,
@@ -99,6 +109,14 @@ class BleHomeTab extends StatelessWidget {
             ),
           ),
         ),
+        if (onShapeTemplateSelected != null)
+          Positioned(
+            top: 128,
+            right: 12,
+            child: SafeArea(
+              child: ShapeTemplateButton(onSelected: onShapeTemplateSelected!),
+            ),
+          ),
         _TopLeftStatus(
           status: status,
           announcement: statusAnnouncement,
@@ -119,7 +137,85 @@ class BleHomeTab extends StatelessWidget {
               ? null
               : () => showScheduleDialog(context, scheduleHost!),
         ),
+        if (onVertexCountChanged != null)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 88,
+            child: VertexCountSlider(
+              value: mapSelection.vertexCount,
+              onChanged: onVertexCountChanged!,
+            ),
+          ),
       ],
+    );
+  }
+}
+
+/// 星などのひな形を選ぶボタン。選ぶと地図中央に範囲が置かれる。
+class ShapeTemplateButton extends StatelessWidget {
+  final ValueChanged<ShapeTemplate> onSelected;
+
+  const ShapeTemplateButton({super.key, required this.onSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<ShapeTemplate>(
+      tooltip: 'ひな形',
+      onSelected: onSelected,
+      itemBuilder: (context) => [
+        for (final template in ShapeTemplate.all)
+          PopupMenuItem<ShapeTemplate>(
+            value: template,
+            child: Text('${template.label}（${template.vertexCount}点）'),
+          ),
+      ],
+      child: const CircleAvatar(
+        backgroundColor: Colors.black54,
+        child: Icon(Icons.star_outline, color: Colors.white),
+      ),
+    );
+  }
+}
+
+/// 清掃範囲の点数を選ぶスライダー。
+class VertexCountSlider extends StatelessWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  const VertexCountSlider({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const min = MapGeometry.minFreehandVertexCount;
+    const max = MapGeometry.maxFreehandVertexCount;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            Text('点数 $value', style: const TextStyle(color: Colors.white)),
+            Expanded(
+              child: Slider(
+                value: value.toDouble(),
+                min: min.toDouble(),
+                max: max.toDouble(),
+                divisions: max - min,
+                label: '$value',
+                onChanged: (v) => onChanged(v.round()),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
