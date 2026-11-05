@@ -42,15 +42,6 @@ class BleHomeTab extends StatelessWidget {
 
   final MapConfig activeMap;
 
-  /// チップのメニューに出す登録済みの地図。
-  final List<MapConfig> maps;
-
-  /// チップのメニューから地図を選んだとき。null なら一覧を出さない。
-  final Future<void> Function(MapConfig)? onMapSelected;
-
-  /// 「地図を管理」を選んだときに地図タブへ移る。
-  final VoidCallback onOpenMaps;
-
   /// 定時清掃ダイアログの窓口。null なら定時清掃ボタンを出さない。
   final ScheduleDialogHost? scheduleHost;
 
@@ -74,9 +65,6 @@ class BleHomeTab extends StatelessWidget {
     this.onVertexCountChanged,
     this.onShapeTemplateSelected,
     required this.activeMap,
-    this.maps = const [],
-    this.onMapSelected,
-    required this.onOpenMaps,
     this.scheduleHost,
   });
 
@@ -93,26 +81,6 @@ class BleHomeTab extends StatelessWidget {
           sendCompleted: sendCompleted,
           onSelectionIdleChanged: onSelectionIdleChanged,
         ),
-        Positioned(
-          top: 64,
-          right: 12,
-          child: SafeArea(
-            child: MapManagementButton(
-              activeMap: activeMap,
-              maps: maps,
-              onSelect: onMapSelected,
-              onPressed: onOpenMaps,
-            ),
-          ),
-        ),
-        if (onShapeTemplateSelected != null)
-          Positioned(
-            top: 128,
-            right: 12,
-            child: SafeArea(
-              child: ShapeTemplateButton(onSelected: onShapeTemplateSelected!),
-            ),
-          ),
         _TopLeftStatus(
           status: status,
           announcement: statusAnnouncement,
@@ -132,6 +100,9 @@ class BleHomeTab extends StatelessWidget {
           onSchedule: scheduleHost == null
               ? null
               : () => showScheduleDialog(context, scheduleHost!),
+          extraAction: onShapeTemplateSelected == null
+              ? null
+              : ShapeTemplateButton(onSelected: onShapeTemplateSelected!),
         ),
         if (onVertexCountChanged != null)
           Positioned(
@@ -167,6 +138,7 @@ class ShapeTemplateButton extends StatelessWidget {
           ),
       ],
       child: const CircleAvatar(
+        radius: 28,
         backgroundColor: Colors.black54,
         child: Icon(Icons.star_outline, color: Colors.white),
       ),

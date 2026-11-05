@@ -104,9 +104,6 @@ class _BleHomePageState extends State<BleHomePage> {
                 sendButtonState: _controller.sendButtonState,
                 canSend: _controller.canSendSelectedMap,
                 activeMap: _controller.activeMapConfig,
-                maps: _controller.allMaps,
-                onMapSelected: _controller.switchMap,
-                onOpenMaps: () => _controller.selectTab(0),
                 scheduleHost: _controller.scheduleDialogHost,
               ),
               BleLogsTab(

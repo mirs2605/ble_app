@@ -13,6 +13,9 @@ class MapSelectionActions extends StatelessWidget {
   final VoidCallback onClear;
   final VoidCallback onSend;
   final VoidCallback? onSchedule;
+
+  /// 予定ボタンの隣に並べる追加ボタン（ひな形など）。
+  final Widget? extraAction;
   final SendButtonState sendButtonState;
 
   const MapSelectionActions({
@@ -23,6 +26,7 @@ class MapSelectionActions extends StatelessWidget {
     required this.onClear,
     required this.onSend,
     this.onSchedule,
+    this.extraAction,
     this.sendButtonState = SendButtonState.ready,
   });
 
@@ -55,16 +59,25 @@ class MapSelectionActions extends StatelessWidget {
                 ),
               ),
             ),
-          if (onSchedule != null)
+          if (onSchedule != null || extraAction != null)
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: FloatingActionButton(
-                  heroTag: 'schedule',
-                  onPressed: onSchedule,
-                  tooltip: AppStrings.scheduleTooltip,
-                  child: const Icon(Icons.schedule),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ?extraAction,
+                    if (extraAction != null && onSchedule != null)
+                      const SizedBox(width: 12),
+                    if (onSchedule != null)
+                      FloatingActionButton(
+                        heroTag: 'schedule',
+                        onPressed: onSchedule,
+                        tooltip: AppStrings.scheduleTooltip,
+                        child: const Icon(Icons.schedule),
+                      ),
+                  ],
                 ),
               ),
             ),
