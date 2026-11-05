@@ -67,6 +67,12 @@ class IconTabNavigation extends StatelessWidget {
                     tooltip: 'マップ',
                   ),
                   BottomNavigationBarItem(
+                    icon: Icon(Icons.event_note_outlined),
+                    activeIcon: SelectedTabIcon(icon: Icons.event_note),
+                    label: '予定',
+                    tooltip: '予定',
+                  ),
+                  BottomNavigationBarItem(
                     icon: Icon(Icons.list_alt_outlined),
                     activeIcon: SelectedTabIcon(icon: Icons.list_alt),
                     label: 'ログ',

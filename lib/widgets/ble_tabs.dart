@@ -13,6 +13,7 @@ import '../theme/app_strings.dart';
 import 'ble_status_indicator.dart';
 import 'status_notification_bar.dart';
 import 'floating_action_controls.dart';
+import 'glass_icon_button.dart';
 import 'map_selection_area.dart';
 import 'map_management_button.dart';
 import 'schedule_dialog.dart';
@@ -137,11 +138,7 @@ class ShapeTemplateButton extends StatelessWidget {
             child: Text('${template.label}（${template.vertexCount}点）'),
           ),
       ],
-      child: const CircleAvatar(
-        radius: 28,
-        backgroundColor: Colors.black54,
-        child: Icon(Icons.star_outline, color: Colors.white),
-      ),
+      child: const GlassIconButton(icon: Icons.star_outline),
     );
   }
 }
@@ -249,6 +246,98 @@ class MapSwitchTab extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+        _TopLeftStatus(
+          status: status,
+          announcement: statusAnnouncement,
+          notice: notice,
+          onPressed: onStatusPressed,
+        ),
+      ],
+    );
+  }
+}
+
+/// 予定タブ。登録済みの定時清掃を確認し、有効切替・削除・ロボットとの同期を行う。
+/// 追加は、地図タブで範囲を囲んでから時計ボタンで行う。
+class ScheduleTab extends StatelessWidget {
+  final BleStatus status;
+  final String? statusAnnouncement;
+  final AppNotice? notice;
+  final VoidCallback onStatusPressed;
+
+  /// null なら予定機能が使えない（一覧は空として扱う）。
+  final ScheduleDialogHost? host;
+
+  const ScheduleTab({
+    super.key,
+    required this.status,
+    required this.statusAnnouncement,
+    required this.notice,
+    required this.onStatusPressed,
+    this.host,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final host = this.host;
+    return Stack(
+      children: [
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 72, 16, 0),
+            child: host == null
+                ? const Text(AppStrings.scheduleEmpty)
+                : ListenableBuilder(
+                    listenable: host.listenable,
+                    builder: (context, _) {
+                      final entries = host.entries();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  AppStrings.scheduleTabTitle,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                key: const Key('schedule-sync'),
+                                tooltip: AppStrings.scheduleSync,
+                                onPressed: host.canSync() ? host.onSync : null,
+                                icon: const Icon(Icons.sync),
+                              ),
+                            ],
+                          ),
+                          Expanded(
+                            child: entries.isEmpty
+                                ? const Align(
+                                    alignment: Alignment.topLeft,
+                                    child: Padding(
+                                      padding: EdgeInsets.only(top: 8),
+                                      child: Text(AppStrings.scheduleEmpty),
+                                    ),
+                                  )
+                                : ListView(
+                                    children: [
+                                      for (final entry in entries)
+                                        ScheduleEntryTile(
+                                          entry: entry,
+                                          host: host,
+                                        ),
+                                    ],
+                                  ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
           ),
         ),
         _TopLeftStatus(

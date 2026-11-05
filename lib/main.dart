@@ -106,6 +106,13 @@ class _BleHomePageState extends State<BleHomePage> {
                 activeMap: _controller.activeMapConfig,
                 scheduleHost: _controller.scheduleDialogHost,
               ),
+              ScheduleTab(
+                status: _controller.status,
+                statusAnnouncement: _controller.statusAnnouncement,
+                notice: _controller.activeNotice,
+                onStatusPressed: _controller.showStatusAnnouncement,
+                host: _controller.scheduleDialogHost,
+              ),
               BleLogsTab(
                 logs: _controller.logs,
                 status: _controller.status,

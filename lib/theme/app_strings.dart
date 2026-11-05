@@ -33,6 +33,7 @@ abstract final class AppStrings {
   static const clearTooltip = '範囲を削除';
   static const scheduleTooltip = '定時清掃を設定';
   static const scheduleTitle = '定時清掃';
+  static const scheduleTabTitle = '予定一覧';
   static const scheduleHelp =
       'ロボットが決まった時刻に清掃を始めます。予定はスマホとロボットの両方に保存され、接続すると自動で同期します。';
   static const scheduleEmpty = '予定はまだありません';

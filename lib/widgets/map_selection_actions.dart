@@ -4,6 +4,7 @@ import '../models/send_button_state.dart';
 import '../theme/app_strings.dart';
 import '../theme/pill_style.dart';
 import 'frosted_glass.dart';
+import 'glass_icon_button.dart';
 import 'mission_send_button.dart';
 
 class MapSelectionActions extends StatelessWidget {
@@ -71,11 +72,11 @@ class MapSelectionActions extends StatelessWidget {
                     if (extraAction != null && onSchedule != null)
                       const SizedBox(width: 12),
                     if (onSchedule != null)
-                      FloatingActionButton(
-                        heroTag: 'schedule',
+                      GlassIconButton(
+                        key: const Key('schedule-open'),
                         onPressed: onSchedule,
                         tooltip: AppStrings.scheduleTooltip,
-                        child: const Icon(Icons.schedule),
+                        icon: Icons.schedule,
                       ),
                   ],
                 ),

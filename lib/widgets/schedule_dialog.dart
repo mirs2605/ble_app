@@ -67,7 +67,8 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
                       padding: EdgeInsets.symmetric(vertical: 8),
                       child: Text(AppStrings.scheduleEmpty),
                     ),
-                  for (final entry in entries) _entryTile(entry),
+                  for (final entry in entries)
+                    ScheduleEntryTile(entry: entry, host: _host),
                   const Divider(height: 24),
                   const Text(AppStrings.scheduleAddTitle),
                   const SizedBox(height: 8),
@@ -119,8 +120,17 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
       },
     );
   }
+}
 
-  Widget _entryTile(ScheduleEntry entry) {
+/// 予定1件の行（時刻・曜日・有効切替・削除）。ダイアログと予定タブで共有する。
+class ScheduleEntryTile extends StatelessWidget {
+  const ScheduleEntryTile({super.key, required this.entry, required this.host});
+
+  final ScheduleEntry entry;
+  final ScheduleDialogHost host;
+
+  @override
+  Widget build(BuildContext context) {
     return ListTile(
       key: Key('schedule-entry-${entry.id}'),
       contentPadding: EdgeInsets.zero,
@@ -132,12 +142,12 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
           Switch(
             key: Key('schedule-toggle-${entry.id}'),
             value: entry.enabled,
-            onChanged: (on) => _host.onToggle(entry.id, on),
+            onChanged: (on) => host.onToggle(entry.id, on),
           ),
           IconButton(
             key: Key('schedule-delete-${entry.id}'),
             tooltip: AppStrings.scheduleDeleteTooltip,
-            onPressed: () => _host.onDelete(entry.id),
+            onPressed: () => host.onDelete(entry.id),
             icon: const Icon(Icons.delete_outline),
           ),
         ],
