@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/app_notice.dart';
@@ -16,7 +15,6 @@ import 'status_notification_bar.dart';
 import 'floating_action_controls.dart';
 import 'map_selection_area.dart';
 import 'map_management_button.dart';
-import 'polygon_form.dart';
 import 'schedule_dialog.dart';
 
 class BleHomeTab extends StatelessWidget {
@@ -43,16 +41,18 @@ class BleHomeTab extends StatelessWidget {
   final ValueChanged<ShapeTemplate>? onShapeTemplateSelected;
 
   final MapConfig activeMap;
+
+  /// チップのメニューに出す登録済みの地図。
   final List<MapConfig> maps;
-  final Future<void> Function(MapConfig) onMapSelected;
-  final Future<void> Function(MapConfig) onMapAdded;
-  final Future<void> Function(MapConfig) onMapDeleted;
+
+  /// チップのメニューから地図を選んだとき。null なら一覧を出さない。
+  final Future<void> Function(MapConfig)? onMapSelected;
+
+  /// 「地図を管理」を選んだときに地図タブへ移る。
+  final VoidCallback onOpenMaps;
 
   /// 定時清掃ダイアログの窓口。null なら定時清掃ボタンを出さない。
   final ScheduleDialogHost? scheduleHost;
-
-  /// ロボットの地図を受信するための窓口。null なら受信ボタンを出さない。
-  final MapReceiveHost? mapReceiveHost;
 
   const BleHomeTab({
     super.key,
@@ -74,12 +74,10 @@ class BleHomeTab extends StatelessWidget {
     this.onVertexCountChanged,
     this.onShapeTemplateSelected,
     required this.activeMap,
-    required this.maps,
-    required this.onMapSelected,
-    required this.onMapAdded,
-    required this.onMapDeleted,
+    this.maps = const [],
+    this.onMapSelected,
+    required this.onOpenMaps,
     this.scheduleHost,
-    this.mapReceiveHost,
   });
 
   @override
@@ -103,9 +101,7 @@ class BleHomeTab extends StatelessWidget {
               activeMap: activeMap,
               maps: maps,
               onSelect: onMapSelected,
-              onAdd: onMapAdded,
-              onDelete: onMapDeleted,
-              receiveHost: mapReceiveHost,
+              onPressed: onOpenMaps,
             ),
           ),
         ),
@@ -220,139 +216,74 @@ class VertexCountSlider extends StatelessWidget {
   }
 }
 
-/// 数値入力タブ。フォームのTextEditingControllerはこのWidgetが所有し、
-/// 入力値のパースと地図選択からの同期もここで完結する。
-/// 送信の可否・実行はController（[canSendPolygon]/[onSendPolygon]）に委ねる。
-class BleValuesTab extends StatefulWidget {
+/// 地図タブ。地図の切替・追加・削除・ロボットからの受信を行う。
+class MapSwitchTab extends StatelessWidget {
   final BleStatus status;
   final String? statusAnnouncement;
   final AppNotice? notice;
-  final List<MapPoint> selectedMapPoints;
-  final ValueChanged<List<MapPoint>> onSendPolygon;
-  final bool Function(List<MapPoint> polygon) canSendPolygon;
   final VoidCallback onStatusPressed;
-  final SendButtonState sendButtonState;
+  final MapConfig activeMap;
+  final List<MapConfig> maps;
+  final Future<void> Function(MapConfig) onMapSelected;
+  final Future<void> Function(MapConfig) onMapAdded;
+  final Future<void> Function(MapConfig) onMapDeleted;
 
-  const BleValuesTab({
+  /// 地図を選んだ・追加した・受信したあとに呼ぶ（マップ画面へ戻る）。
+  final VoidCallback onDone;
+  final MapReceiveHost? mapReceiveHost;
+
+  const MapSwitchTab({
     super.key,
     required this.status,
     required this.statusAnnouncement,
     required this.notice,
-    required this.selectedMapPoints,
-    required this.onSendPolygon,
-    required this.canSendPolygon,
     required this.onStatusPressed,
-    required this.sendButtonState,
+    required this.activeMap,
+    required this.maps,
+    required this.onMapSelected,
+    required this.onMapAdded,
+    required this.onMapDeleted,
+    required this.onDone,
+    this.mapReceiveHost,
   });
 
   @override
-  State<BleValuesTab> createState() => _BleValuesTabState();
-}
-
-class _BleValuesTabState extends State<BleValuesTab> {
-  static const _polygonDefaults = [
-    [1.0, 1.0],
-    [2.5, 1.0],
-    [4.0, 2.0],
-    [4.0, 3.0],
-    [2.5, 3.0],
-    [1.0, 2.0],
-  ];
-
-  // --- 清掃範囲フォーム ---
-  late final List<TextEditingController> _xControllers;
-  late final List<TextEditingController> _yControllers;
-
-  @override
-  void initState() {
-    super.initState();
-    _xControllers = List.generate(
-      _polygonDefaults.length,
-      (i) => TextEditingController(text: _polygonDefaults[i][0].toString()),
-    );
-    _yControllers = List.generate(
-      _polygonDefaults.length,
-      (i) => TextEditingController(text: _polygonDefaults[i][1].toString()),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant BleValuesTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 地図タブでの選択を6点フォームへ反映する。
-    if (!listEquals(oldWidget.selectedMapPoints, widget.selectedMapPoints) &&
-        widget.selectedMapPoints.length == _xControllers.length) {
-      for (int i = 0; i < _xControllers.length; i++) {
-        _xControllers[i].text = widget.selectedMapPoints[i].x.toStringAsFixed(
-          2,
-        );
-        _yControllers[i].text = widget.selectedMapPoints[i].y.toStringAsFixed(
-          2,
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final c in [..._xControllers, ..._yControllers]) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  /// 清掃範囲フォーム値を多角形にパースする。1つでも不正なら空リストを返す。
-  List<MapPoint> _readPolygon() {
-    final polygon = <MapPoint>[];
-    for (int i = 0; i < _xControllers.length; i++) {
-      final x = double.tryParse(_xControllers[i].text);
-      final y = double.tryParse(_yControllers[i].text);
-      if (x == null || y == null) return <MapPoint>[];
-      polygon.add(MapPoint(x: x, y: y));
-    }
-    return polygon;
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final polygon = _readPolygon();
     return Stack(
       children: [
         SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 56),
-                  const Text(
-                    AppStrings.cleaningAreaTitle,
+            padding: const EdgeInsets.fromLTRB(0, 72, 0, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    AppStrings.mapsTitle,
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
-                  const SizedBox(height: 8),
-                  PolygonForm(
-                    xControllers: _xControllers,
-                    yControllers: _yControllers,
+                ),
+                Expanded(
+                  child: MapManagementPanel(
+                    activeMap: activeMap,
+                    maps: maps,
+                    onSelect: onMapSelected,
+                    onAdd: onMapAdded,
+                    onDelete: onMapDeleted,
+                    onDone: onDone,
+                    receiveHost: mapReceiveHost,
                   ),
-                  // 清掃範囲の送信はBottomSendActionのFABで行うため余白を確保。
-                  const SizedBox(height: 80),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
         _TopLeftStatus(
-          status: widget.status,
-          announcement: widget.statusAnnouncement,
-          notice: widget.notice,
-          onPressed: widget.onStatusPressed,
-        ),
-        BottomSendAction(
-          heroTag: 'send-values',
-          enabled: widget.canSendPolygon(polygon),
-          onPressed: () => widget.onSendPolygon(polygon),
-          state: widget.sendButtonState,
+          status: status,
+          announcement: statusAnnouncement,
+          notice: notice,
+          onPressed: onStatusPressed,
         ),
       ],
     );

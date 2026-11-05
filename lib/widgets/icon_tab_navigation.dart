@@ -55,10 +55,10 @@ class IconTabNavigation extends StatelessWidget {
                 unselectedFontSize: 12,
                 items: const [
                   BottomNavigationBarItem(
-                    icon: Icon(Icons.tune_outlined),
-                    activeIcon: SelectedTabIcon(icon: Icons.tune),
-                    label: '数値',
-                    tooltip: '数値',
+                    icon: Icon(Icons.layers_outlined),
+                    activeIcon: SelectedTabIcon(icon: Icons.layers),
+                    label: '地図',
+                    tooltip: '地図',
                   ),
                   BottomNavigationBarItem(
                     icon: Icon(Icons.map_outlined),

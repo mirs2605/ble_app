@@ -41,20 +41,19 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: MapManagementButton(
+          body: MapManagementPanel(
             activeMap: active,
             maps: const [active, other],
             onSelect: (_) async {},
             onAdd: (_) async {},
             onDelete: (map) async => deleted = map,
+            onDone: () {},
             imageStorage: storage,
           ),
         ),
       ),
     );
 
-    await tester.tap(find.text(active.name));
-    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.delete_outline));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '削除'));
@@ -68,26 +67,81 @@ void main() {
     tester,
   ) async {
     MapConfig? selected;
+    var done = false;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: MapManagementButton(
+          body: MapManagementPanel(
             activeMap: active,
             maps: const [active, other],
             onSelect: (map) async => selected = map,
             onAdd: (_) async {},
             onDelete: (_) async {},
+            onDone: () => done = true,
           ),
         ),
       ),
     );
 
-    await tester.tap(find.text(active.name));
-    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ListTile, other.name));
     await tester.pumpAndSettle();
 
     expect(selected, other);
-    expect(find.text('地図管理'), findsNothing);
+    expect(done, isTrue);
+  });
+
+  group('MapManagementButton', () {
+    Future<void> pump(
+      WidgetTester tester, {
+      Future<void> Function(MapConfig)? onSelect,
+      VoidCallback? onPressed,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MapManagementButton(
+            activeMap: active,
+            maps: const [active, other],
+            onSelect: onSelect,
+            onPressed: onPressed ?? () {},
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('メニューから別の地図を選ぶと切り替わる', (tester) async {
+      MapConfig? selected;
+      await pump(tester, onSelect: (map) async => selected = map);
+
+      await tester.tap(find.byKey(const Key('map-switch-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(other.name).last);
+      await tester.pumpAndSettle();
+
+      expect(selected, other);
+    });
+
+    testWidgets('現在の地図を選んでも切り替えない', (tester) async {
+      MapConfig? selected;
+      await pump(tester, onSelect: (map) async => selected = map);
+
+      await tester.tap(find.byKey(const Key('map-switch-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(active.name).last);
+      await tester.pumpAndSettle();
+
+      expect(selected, isNull);
+    });
+
+    testWidgets('「地図を管理」で地図タブへ移る', (tester) async {
+      var opened = false;
+      await pump(tester, onSelect: (_) async {}, onPressed: () => opened = true);
+
+      await tester.tap(find.byKey(const Key('map-switch-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('地図を管理…'));
+      await tester.pumpAndSettle();
+
+      expect(opened, isTrue);
+    });
   });
 }

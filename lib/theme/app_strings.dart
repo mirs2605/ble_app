@@ -55,6 +55,8 @@ abstract final class AppStrings {
   static String scheduleSyncLog(int stored, int pushed) =>
       '🔄 予定を同期しました（受信 $stored 件 / 送信 $pushed 件）';
   static const mapsTitle = '地図管理';
+  static const switchMap = '地図を切り替え';
+  static const manageMaps = '地図を管理…';
   static const addMap = 'スマホから地図を追加';
   static const receiveMap = 'ロボットから地図を受信';
   static const receiveMapNeedsConnection = 'ロボットに接続すると受信できます';
@@ -89,7 +91,6 @@ abstract final class AppStrings {
   static const showBluetoothStatus = 'Bluetoothステータスを表示';
 
   // --- タブ見出し ---
-  static const cleaningAreaTitle = '清掃範囲 (map座標, m)';
   static const logsTitle = 'ログ';
 
   /// 接続状態の表示ラベル。

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/map_config.dart';
@@ -7,14 +8,97 @@ import '../theme/app_strings.dart';
 
 export '../models/map_receive_host.dart';
 
+/// 「地図を管理」項目を表すメニューの値（PopupMenu は null の値を通知しない）。
+const Object _manageMaps = 'manage-maps';
+
+/// 地図画面の右上に出す、現在の地図名のチップ。
+/// 押すと登録済みの地図の一覧が開き、その場で切り替えられる。
+/// 「地図を管理」を選ぶと [onPressed] で地図タブへ移る。
+/// [onSelect] を渡さない場合は一覧を出さず、押すと [onPressed] だけを呼ぶ。
 class MapManagementButton extends StatelessWidget {
   const MapManagementButton({
+    super.key,
+    required this.activeMap,
+    required this.onPressed,
+    this.maps = const [],
+    this.onSelect,
+  });
+
+  final MapConfig activeMap;
+
+  /// 地図タブ（管理画面）を開く。
+  final VoidCallback onPressed;
+  final List<MapConfig> maps;
+
+  /// 一覧から地図を選んだとき。null なら一覧を出さない。
+  final Future<void> Function(MapConfig)? onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = Text(
+      activeMap.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    final select = onSelect;
+    if (select == null) {
+      return OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: const Icon(Icons.map_outlined),
+        label: label,
+      );
+    }
+    return PopupMenuButton<Object>(
+      key: const Key('map-switch-menu'),
+      tooltip: AppStrings.switchMap,
+      onSelected: (value) {
+        if (value is MapConfig) {
+          if (value.id != activeMap.id) select(value);
+        } else {
+          onPressed();
+        }
+      },
+      itemBuilder: (context) => [
+        for (final map in maps)
+          CheckedPopupMenuItem<Object>(
+            value: map,
+            checked: map.id == activeMap.id,
+            child: Text(map.name),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<Object>(
+          value: _manageMaps,
+          child: Text(AppStrings.manageMaps),
+        ),
+      ],
+      child: IgnorePointer(
+        child: OutlinedButton.icon(
+          onPressed: () {},
+          icon: const Icon(Icons.map_outlined),
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: label),
+              const Icon(Icons.arrow_drop_down),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 地図の切替・追加・削除・ロボットからの受信をまとめた操作パネル。
+/// 地図タブの本体。操作が完了して画面を離れてよいときに [onDone] を呼ぶ。
+class MapManagementPanel extends StatefulWidget {
+  const MapManagementPanel({
     super.key,
     required this.activeMap,
     required this.maps,
     required this.onSelect,
     required this.onAdd,
     required this.onDelete,
+    required this.onDone,
     this.imageStorage,
     this.receiveHost,
   });
@@ -24,6 +108,7 @@ class MapManagementButton extends StatelessWidget {
   final Future<void> Function(MapConfig) onSelect;
   final Future<void> Function(MapConfig) onAdd;
   final Future<void> Function(MapConfig) onDelete;
+  final VoidCallback onDone;
 
   /// 地図画像の選択・保存・削除。未指定なら端末のギャラリーとアプリ領域を使う。
   final MapImageStorage? imageStorage;
@@ -32,50 +117,13 @@ class MapManagementButton extends StatelessWidget {
   final MapReceiveHost? receiveHost;
 
   @override
-  Widget build(BuildContext context) => OutlinedButton.icon(
-    onPressed: () => showDialog<void>(
-      context: context,
-      builder: (_) => _MapManagementDialog(
-        activeMap: activeMap,
-        maps: maps,
-        onSelect: onSelect,
-        onAdd: onAdd,
-        onDelete: onDelete,
-        imageStorage: imageStorage ?? MapImageStorage(),
-        receiveHost: receiveHost,
-      ),
-    ),
-    icon: const Icon(Icons.map_outlined),
-    label: Text(activeMap.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-  );
+  State<MapManagementPanel> createState() => _MapManagementPanelState();
 }
 
-class _MapManagementDialog extends StatefulWidget {
-  const _MapManagementDialog({
-    required this.activeMap,
-    required this.maps,
-    required this.onSelect,
-    required this.onAdd,
-    required this.onDelete,
-    required this.imageStorage,
-    this.receiveHost,
-  });
-
-  final MapConfig activeMap;
-  final List<MapConfig> maps;
-  final Future<void> Function(MapConfig) onSelect;
-  final Future<void> Function(MapConfig) onAdd;
-  final Future<void> Function(MapConfig) onDelete;
-  final MapImageStorage imageStorage;
-  final MapReceiveHost? receiveHost;
-
-  @override
-  State<_MapManagementDialog> createState() => _MapManagementDialogState();
-}
-
-class _MapManagementDialogState extends State<_MapManagementDialog> {
-  MapImageStorage get _imageStorage => widget.imageStorage;
-  late final List<MapConfig> _maps;
+class _MapManagementPanelState extends State<MapManagementPanel> {
+  late final MapImageStorage _imageStorage =
+      widget.imageStorage ?? MapImageStorage();
+  late List<MapConfig> _maps;
   bool _busy = false;
 
   @override
@@ -84,14 +132,23 @@ class _MapManagementDialogState extends State<_MapManagementDialog> {
     _maps = List<MapConfig>.of(widget.maps);
   }
 
+  @override
+  void didUpdateWidget(covariant MapManagementPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 受信・追加で一覧が増えたときに追従する。
+    if (!listEquals(oldWidget.maps, widget.maps)) {
+      _maps = List<MapConfig>.of(widget.maps);
+    }
+  }
+
   Future<void> _select(MapConfig map) async {
     try {
       if (map.id == widget.activeMap.id) {
-        if (mounted) Navigator.of(context).pop();
+        if (mounted) widget.onDone();
         return;
       }
       await widget.onSelect(map);
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) widget.onDone();
     } catch (error) {
       _showError(error);
     }
@@ -125,7 +182,7 @@ class _MapManagementDialogState extends State<_MapManagementDialog> {
         await _imageStorage.delete(path);
         rethrow;
       }
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) widget.onDone();
     } catch (error) {
       if (mounted) _showError(error);
     } finally {
@@ -137,7 +194,7 @@ class _MapManagementDialogState extends State<_MapManagementDialog> {
     final ok = await host.onReceive();
     if (!mounted) return;
     if (ok) {
-      Navigator.of(context).pop();
+      widget.onDone();
       return;
     }
     ScaffoldMessenger.of(
@@ -218,60 +275,46 @@ class _MapManagementDialogState extends State<_MapManagementDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text(AppStrings.mapsTitle),
-    content: SizedBox(
-      width: 420,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 420),
-        child: _busy
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final map in _maps)
-                    ListTile(
-                      title: Text(map.name),
-                      subtitle: Text(
-                        '${map.imageWidth.toInt()} × '
-                        '${map.imageHeight.toInt()} px · '
-                        '${map.resolution} m/px',
-                      ),
-                      leading: Icon(
-                        map.id == widget.activeMap.id
-                            ? Icons.radio_button_checked
-                            : Icons.radio_button_unchecked,
-                      ),
-                      onTap: () => _select(map),
-                      trailing: map.id == widget.activeMap.id
-                          ? null
-                          : IconButton(
-                              tooltip: AppStrings.delete,
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () => _delete(map),
-                            ),
-                    ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: _addMap,
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                    label: const Text(AppStrings.addMap),
+  Widget build(BuildContext context) {
+    if (_busy) return const Center(child: CircularProgressIndicator());
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        for (final map in _maps)
+          ListTile(
+            title: Text(map.name),
+            subtitle: Text(
+              '${map.imageWidth.toInt()} × '
+              '${map.imageHeight.toInt()} px · '
+              '${map.resolution} m/px',
+            ),
+            leading: Icon(
+              map.id == widget.activeMap.id
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+            ),
+            onTap: () => _select(map),
+            trailing: map.id == widget.activeMap.id
+                ? null
+                : IconButton(
+                    tooltip: AppStrings.delete,
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _delete(map),
                   ),
-                  if (widget.receiveHost != null) ...[
-                    const SizedBox(height: 8),
-                    _receiveButton(widget.receiveHost!),
-                  ],
-                ],
-              ),
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text(AppStrings.close),
-      ),
-    ],
-  );
+          ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _addMap,
+          icon: const Icon(Icons.add_photo_alternate_outlined),
+          label: const Text(AppStrings.addMap),
+        ),
+        if (widget.receiveHost != null) ...[
+          const SizedBox(height: 8),
+          _receiveButton(widget.receiveHost!),
+        ],
+      ],
+    );
+  }
 }
 
 class _MapDetails {

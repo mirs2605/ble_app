@@ -329,23 +329,26 @@ void main() {
     });
   });
 
-  group('地図管理ダイアログの受信ボタン', () {
+  group('地図管理パネルの受信ボタン', () {
+    var done = false;
+    setUp(() => done = false);
+
     Future<void> open(WidgetTester tester, MapReceiveHost? host) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: MapManagementButton(
+            body: MapManagementPanel(
               activeMap: BuiltinMaps.gakuseigenkan,
               maps: [BuiltinMaps.gakuseigenkan],
               onSelect: (_) async {},
               onAdd: (_) async {},
               onDelete: (_) async {},
+              onDone: () => done = true,
               receiveHost: host,
             ),
           ),
         ),
       );
-      await tester.tap(find.byType(OutlinedButton).first);
       await tester.pumpAndSettle();
     }
 
@@ -366,7 +369,7 @@ void main() {
       expect(find.byKey(const Key('map-receive')), findsNothing);
     });
 
-    testWidgets('成功したらダイアログを閉じる', (tester) async {
+    testWidgets('成功したら画面を離れる', (tester) async {
       var calls = 0;
       await open(
         tester,
@@ -382,16 +385,16 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(calls, 1);
-      expect(find.byKey(const Key('map-receive')), findsNothing);
+      expect(done, isTrue);
     });
 
-    testWidgets('失敗したらダイアログを残して知らせる', (tester) async {
+    testWidgets('失敗したら画面を残して知らせる', (tester) async {
       await open(tester, host(onReceive: () async => false));
 
       await tester.tap(find.byKey(const Key('map-receive')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('map-receive')), findsOneWidget);
+      expect(done, isFalse);
       expect(find.text('地図を受信できませんでした（詳細はログ）'), findsOneWidget);
     });
 

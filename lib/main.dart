@@ -71,15 +71,18 @@ class _BleHomePageState extends State<BleHomePage> {
           body: IndexedStack(
             index: _controller.selectedTabIndex,
             children: [
-              BleValuesTab(
+              MapSwitchTab(
                 status: _controller.status,
                 statusAnnouncement: _controller.statusAnnouncement,
                 notice: _controller.activeNotice,
-                selectedMapPoints: _controller.selectedMapPoints,
-                onSendPolygon: _controller.sendPolygon,
-                canSendPolygon: _controller.canSendPolygon,
                 onStatusPressed: _controller.showStatusAnnouncement,
-                sendButtonState: _controller.sendButtonState,
+                activeMap: _controller.activeMapConfig,
+                maps: _controller.allMaps,
+                onMapSelected: _controller.switchMap,
+                onMapAdded: _controller.addMap,
+                onMapDeleted: _controller.deleteMap,
+                onDone: () => _controller.selectTab(1),
+                mapReceiveHost: _controller.mapReceiveHost,
               ),
               BleHomeTab(
                 mapSelection: _controller.mapSelection,
@@ -103,10 +106,8 @@ class _BleHomePageState extends State<BleHomePage> {
                 activeMap: _controller.activeMapConfig,
                 maps: _controller.allMaps,
                 onMapSelected: _controller.switchMap,
-                onMapAdded: _controller.addMap,
-                onMapDeleted: _controller.deleteMap,
+                onOpenMaps: () => _controller.selectTab(0),
                 scheduleHost: _controller.scheduleDialogHost,
-                mapReceiveHost: _controller.mapReceiveHost,
               ),
               BleLogsTab(
                 logs: _controller.logs,
