@@ -6,6 +6,8 @@ import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
 import '../models/map_config.dart';
 import '../models/map_geometry.dart';
+import '../models/map_receive_host.dart';
+import '../models/schedule_dialog_host.dart';
 import '../models/schedule_entry.dart';
 import '../models/shape_template.dart';
 import '../models/send_button_state.dart';
@@ -17,8 +19,7 @@ import '../services/map_selection_controller.dart';
 import '../services/permission_gateway.dart';
 import '../services/schedule_repository.dart';
 import '../theme/app_strings.dart';
-import '../widgets/map_management_button.dart';
-import '../widgets/schedule_dialog.dart';
+import 'map_catalog.dart';
 import 'notice_board.dart';
 import 'robot_map_receiver.dart';
 import 'schedule_coordinator.dart';
@@ -35,8 +36,12 @@ class BleHomeController extends ChangeNotifier {
     ScheduleRepository? scheduleRepository,
     ScheduleCoordinator? scheduleCoordinator,
     RobotMapReceiver? robotMapReceiver,
+    MapImageStorage Function()? mapImageStorageFactory,
   }) : _permissions = permissionGateway ?? const DefaultPermissionGateway(),
-       _mapRepo = mapRepository ?? MapConfigRepository.instance {
+       _catalog = MapCatalog(
+         repository: mapRepository ?? MapConfigRepository.instance,
+       ),
+       _mapImageStorageFactory = mapImageStorageFactory ?? MapImageStorage.new {
     _robotMapReceiver = robotMapReceiver;
     _connection = (connectionFactory ?? BleService.new)(
       onLog: _addServiceLog,
@@ -57,6 +62,7 @@ class BleHomeController extends ChangeNotifier {
       _scheduleCoordinator = null;
     }
     _scheduleCoordinator?.addListener(_guardedNotify);
+    _catalog.addListener(_guardedNotify);
     _statusBoard = NoticeBoard<String>(onChanged: _guardedNotify);
     _noticeBoard = NoticeBoard<AppNotice>(onChanged: _guardedNotify);
     unawaited(_startAutoConnect());
@@ -65,7 +71,8 @@ class BleHomeController extends ChangeNotifier {
 
   late final BleConnection _connection;
   final PermissionGateway _permissions;
-  final MapConfigRepository _mapRepo;
+  final MapCatalog _catalog;
+  final MapImageStorage Function() _mapImageStorageFactory;
   late final ScheduleCoordinator? _scheduleCoordinator;
   RobotMapReceiver? _robotMapReceiver;
 
@@ -77,12 +84,6 @@ class BleHomeController extends ChangeNotifier {
   late final NoticeBoard<String> _statusBoard;
   late final NoticeBoard<AppNotice> _noticeBoard;
   final SendMissionTracker _sendTracker = SendMissionTracker();
-
-  /// 現在表示中のマップ設定。DB読み込み完了まではBuiltinMapsのデフォルト値。
-  MapConfig _activeMapConfig = BuiltinMaps.gakuseigenkan;
-
-  /// マップ一覧。DB読み込み完了後に更新される。
-  List<MapConfig> _allMaps = [];
 
   /// 地図選択の唯一の所有者。MapSelectionAreaはこのインスタンスを
   /// 直接操作し、確定時にonChangedで通知する（値のミラーは持たない）。
@@ -101,10 +102,10 @@ class BleHomeController extends ChangeNotifier {
   String? get statusAnnouncement => _statusBoard.value;
 
   /// 現在アクティブなマップ設定。
-  MapConfig get activeMapConfig => _activeMapConfig;
+  MapConfig get activeMapConfig => _catalog.active;
 
   /// 登録済みマップ一覧。
-  List<MapConfig> get allMaps => List.unmodifiable(_allMaps);
+  List<MapConfig> get allMaps => _catalog.all;
 
   /// 表示中の独立通知。一時通知（3秒）を優先し、なければ囲み促進のヒント。
   /// ヒント条件は従来の画面下表示と同一：未選択かつ描画中でないこと。
@@ -126,56 +127,25 @@ class BleHomeController extends ChangeNotifier {
     if (!_isDisposed) notifyListeners();
   }
 
-  /// DBからアクティブマップと一覧を読み込む。
-  Future<void> _loadMapConfig() async {
-    if (_isDisposed) return;
-    final active = await _mapRepo.activeMap();
-    final all = await _mapRepo.allMaps();
-    if (_isDisposed) return;
-    _activeMapConfig = active;
-    _allMaps = all;
-    notifyListeners();
-  }
+  Future<void> _loadMapConfig() => _catalog.load();
 
   /// アクティブマップを切り替える。
   Future<void> switchMap(MapConfig config) async {
-    if (_isDisposed) return;
-    final id = config.id;
-    if (id == null) return;
-    await _mapRepo.setActiveMap(id);
-    if (_isDisposed) return;
-    _activeMapConfig = config;
+    if (!await _catalog.switchTo(config) || _isDisposed) return;
     // マップ切り替え時は選択をリセットする。
     clearSelection();
-    notifyListeners();
   }
 
   /// マップを追加してアクティブにする。
   Future<void> addMap(MapConfig config) async {
-    if (_isDisposed) return;
-    final saved = await _mapRepo.addMap(config);
-    await _mapRepo.setActiveMap(saved.id!);
-    if (_isDisposed) return;
-    _activeMapConfig = saved;
-    _allMaps = await _mapRepo.allMaps();
+    if (!await _catalog.add(config) || _isDisposed) return;
     clearSelection();
-    notifyListeners();
   }
 
   /// マップを削除する。アクティブマップは削除不可。
   Future<void> deleteMap(MapConfig config) async {
-    if (_isDisposed) return;
-    final id = config.id;
-    if (id == null) return;
-    try {
-      await _mapRepo.deleteMap(id);
-    } on StateError catch (e) {
-      addLog('❌ ${e.message}');
-      return;
-    }
-    if (_isDisposed) return;
-    _allMaps = await _mapRepo.allMaps();
-    notifyListeners();
+    final error = await _catalog.delete(config);
+    if (error != null) addLog('❌ $error');
   }
 
   void selectTab(int index) {
@@ -204,7 +174,7 @@ class BleHomeController extends ChangeNotifier {
   /// ひな形の形を選択範囲として地図中央に置く。頂点数もひな形に合わせる。
   void applyShapeTemplate(ShapeTemplate template) {
     mapSelection.vertexCount = template.vertexCount;
-    setSelectedMapPoints(template.placeOn(_activeMapConfig));
+    setSelectedMapPoints(template.placeOn(_catalog.active));
     addLog('⭐ 「${template.label}」のひな形を配置しました');
   }
 
@@ -331,7 +301,7 @@ class BleHomeController extends ChangeNotifier {
   // ─────────────────────────────────────────
 
   RobotMapReceiver get _mapReceiver => _robotMapReceiver ??= () {
-    final storage = MapImageStorage();
+    final storage = _mapImageStorageFactory();
     final receiver = RobotMapReceiver(
       connection: _connection,
       saveImage: storage.saveBytes,
@@ -444,6 +414,7 @@ class BleHomeController extends ChangeNotifier {
     unawaited(_connection.dispose());
     _scheduleCoordinator?.dispose();
     _robotMapReceiver?.dispose();
+    _catalog.dispose();
     _statusBoard.dispose();
     _noticeBoard.dispose();
     super.dispose();

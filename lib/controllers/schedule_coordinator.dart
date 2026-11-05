@@ -5,12 +5,12 @@ import 'package:flutter/foundation.dart';
 
 import '../models/app_notice.dart';
 import '../models/cleaning_zone.dart';
+import '../models/schedule_dialog_host.dart';
 import '../models/schedule_entry.dart';
 import '../services/ble_connection.dart';
 import '../services/schedule_repository.dart';
 import '../services/schedule_sync.dart';
 import '../theme/app_strings.dart';
-import '../widgets/schedule_dialog.dart';
 
 /// 定時清掃の予定管理と同期の協調役（coordinator）。
 ///
