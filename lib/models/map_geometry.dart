@@ -100,7 +100,7 @@ class MapGeometry {
     final sectorDistances = List<double>.filled(vertexCount, -1);
     final sectorAngle = math.pi * 2 / vertexCount;
 
-    for (final point in path) {
+    void consider(Offset point) {
       final angle = math.atan2(point.dy - center.dy, point.dx - center.dx);
       final normalizedAngle = (angle + math.pi * 2) % (math.pi * 2);
       final sector = (normalizedAngle / sectorAngle).floor().clamp(
@@ -111,6 +111,38 @@ class MapGeometry {
       if (distance > sectorDistances[sector]) {
         sectors[sector] = point;
         sectorDistances[sector] = distance;
+      }
+    }
+
+    for (final point in path) {
+      consider(point);
+    }
+
+    if (sectors.contains(null) && path.length >= 3) {
+      final missing = <int>{
+        for (var i = 0; i < vertexCount; i++)
+          if (sectors[i] == null) i,
+      };
+      const stepsPerSegment = 32;
+      for (var i = 0; i < path.length; i++) {
+        final a = path[i];
+        final b = path[(i + 1) % path.length];
+        for (var s = 1; s < stepsPerSegment; s++) {
+          final point = Offset.lerp(a, b, s / stepsPerSegment)!;
+          final angle = math.atan2(point.dy - center.dy, point.dx - center.dx);
+          final normalizedAngle = (angle + math.pi * 2) % (math.pi * 2);
+          final sector = (normalizedAngle / sectorAngle).floor().clamp(
+            0,
+            vertexCount - 1,
+          );
+          if (missing.contains(sector)) {
+            final distance = (point - center).distanceSquared;
+            if (distance > sectorDistances[sector]) {
+              sectors[sector] = point;
+              sectorDistances[sector] = distance;
+            }
+          }
+        }
       }
     }
 
@@ -135,5 +167,83 @@ class MapGeometry {
           ),
         )
         .toList();
+  }
+
+  /// 既存の多角形 [polygon] の形状を保ったまま、頂点数を [vertexCount] に変更する。
+  ///
+  /// 頂点数を増やす場合は既存の角を残したまま長い辺を分割して頂点を追加する。
+  /// 頂点数を減らす場合は外周を等間隔にサンプリングする。
+  static List<MapPoint> resamplePolygon(
+    List<MapPoint> polygon,
+    int vertexCount,
+  ) {
+    if (polygon.length < CleaningZoneMission.minPoints ||
+        vertexCount < CleaningZoneMission.minPoints ||
+        polygon.length == vertexCount) {
+      return List<MapPoint>.from(polygon);
+    }
+
+    final m = polygon.length;
+    final lengths = List<double>.generate(m, (i) {
+      final a = polygon[i];
+      final b = polygon[(i + 1) % m];
+      final dx = b.x - a.x;
+      final dy = b.y - a.y;
+      return math.sqrt(dx * dx + dy * dy);
+    });
+
+    if (vertexCount > m) {
+      final extra = vertexCount - m;
+      final splits = List<int>.filled(m, 0);
+      for (var s = 0; s < extra; s++) {
+        var bestEdge = 0;
+        var bestSegLen = -1.0;
+        for (var i = 0; i < m; i++) {
+          final segLen = lengths[i] / (splits[i] + 1);
+          if (segLen > bestSegLen) {
+            bestSegLen = segLen;
+            bestEdge = i;
+          }
+        }
+        splits[bestEdge]++;
+      }
+      final result = <MapPoint>[];
+      for (var i = 0; i < m; i++) {
+        final a = polygon[i];
+        final b = polygon[(i + 1) % m];
+        result.add(a);
+        final k = splits[i];
+        for (var j = 1; j <= k; j++) {
+          final t = j / (k + 1);
+          result.add(
+            MapPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t),
+          );
+        }
+      }
+      return result;
+    }
+
+    final perimeter = lengths.fold<double>(0, (sum, len) => sum + len);
+    if (perimeter <= 0) return List<MapPoint>.from(polygon);
+
+    final step = perimeter / vertexCount;
+    final sampled = <MapPoint>[];
+    for (var k = 0; k < vertexCount; k++) {
+      var target = k * step;
+      for (var i = 0; i < m; i++) {
+        final len = lengths[i];
+        if (target <= len || i == m - 1) {
+          final a = polygon[i];
+          final b = polygon[(i + 1) % m];
+          final t = len > 0 ? (target / len).clamp(0.0, 1.0) : 0.0;
+          sampled.add(
+            MapPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t),
+          );
+          break;
+        }
+        target -= len;
+      }
+    }
+    return sampled;
   }
 }

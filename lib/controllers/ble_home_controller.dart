@@ -160,15 +160,19 @@ class BleHomeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// フリーハンド選択の頂点数を変更する。既存の選択は点数が合わなくなるため消す。
+  /// 選択範囲の頂点数を変更する。すでに範囲が選択されていればその頂点数も変更する。
   void setVertexCount(int count) {
     final next = count.clamp(
       MapGeometry.minFreehandVertexCount,
       MapGeometry.maxFreehandVertexCount,
     );
-    if (next == mapSelection.vertexCount) return;
-    mapSelection.vertexCount = next;
-    clearSelection();
+    if (next == mapSelection.vertexCount &&
+        (!mapSelection.hasSelection || mapSelection.points.length == next)) {
+      return;
+    }
+    mapSelection.setVertexCount(next);
+    _sendTracker.resetProgress();
+    notifyListeners();
   }
 
   /// ひな形の形を選択範囲として地図中央に置く。頂点数もひな形に合わせる。

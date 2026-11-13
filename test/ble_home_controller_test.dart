@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -404,6 +405,69 @@ void main() {
       controller.allMaps
           .firstWhere((map) => map.name == BuiltinMaps.gakuseigenkan.name)
           .id!,
+    );
+  });
+
+  test('範囲を囲ったあとに頂点数を変更すると範囲を保ったまま点数が変わる', () async {
+    final controller = buildController();
+    addTearDown(controller.dispose);
+    await flushAsync();
+
+    const rectangle = [
+      MapPoint(x: 1, y: 1),
+      MapPoint(x: 5, y: 1),
+      MapPoint(x: 5, y: 4),
+      MapPoint(x: 1, y: 4),
+    ];
+    controller.setSelectedMapPoints(rectangle);
+
+    controller.setVertexCount(8);
+    expect(controller.mapSelection.vertexCount, 8);
+    expect(controller.selectedMapPoints, hasLength(8));
+    expect(
+      CleaningZoneMission(polygon: controller.selectedMapPoints).isValid,
+      isTrue,
+    );
+
+    controller.setVertexCount(4);
+    expect(controller.selectedMapPoints, rectangle);
+
+    controller.setVertexCount(3);
+    expect(controller.selectedMapPoints, hasLength(3));
+    expect(
+      CleaningZoneMission(polygon: controller.selectedMapPoints).isValid,
+      isTrue,
+    );
+  });
+
+  test('フリーハンドで囲ったあとにスライダーで頂点数を増減できる', () async {
+    final controller = buildController();
+    addTearDown(controller.dispose);
+    await flushAsync();
+
+    controller.mapSelection.updatePolygonFromPath(const [
+      Offset(280, 100),
+      Offset(497, 225),
+      Offset(497, 475),
+      Offset(280, 600),
+      Offset(63, 475),
+      Offset(63, 225),
+    ], const Size(561, 775));
+    controller.setSelectedMapPoints(controller.mapSelection.points);
+    expect(controller.selectedMapPoints, hasLength(6));
+
+    controller.setVertexCount(4);
+    expect(controller.selectedMapPoints, hasLength(4));
+    expect(
+      CleaningZoneMission(polygon: controller.selectedMapPoints).isValid,
+      isTrue,
+    );
+
+    controller.setVertexCount(10);
+    expect(controller.selectedMapPoints, hasLength(10));
+    expect(
+      CleaningZoneMission(polygon: controller.selectedMapPoints).isValid,
+      isTrue,
     );
   });
 }
