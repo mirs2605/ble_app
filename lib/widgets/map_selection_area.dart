@@ -8,6 +8,7 @@ import '../models/map_config.dart';
 import '../models/map_geometry.dart';
 import '../services/map_selection_controller.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_strings.dart';
 
 class MapSelectionArea extends StatefulWidget {
   /// 選択状態の所有者は親（BleHomeController）。
@@ -111,8 +112,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
             _lastFocalPoint = details.localFocalPoint;
             _lastScale = 1.0;
             if (details.pointerCount > 1) {
-              _selectionController.selectionStart = null;
-              _selectionController.activeHandleIndex = null;
+              _selectionController.cancelGesture();
               _freehandPath.clear();
             } else {
               final local = _toLocalMapPoint(
@@ -120,27 +120,21 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                 mapSize,
                 mapOffset,
               );
-              final hit = _selectionController.hitHandle(
+              if (!_selectionController.startGesture(
                 local,
                 mapSize,
                 _mapConfig,
-              );
-              if (_selectionController.points.length >=
-                  _selectionController.vertexCount) {
-                if (hit != null) {
-                  setState(() {
-                    _selectionController.activeHandleIndex = hit;
-                    _magnifierPosition = details.localFocalPoint;
-                  });
-                }
+              )) {
                 return;
               }
               setState(() {
-                _selectionController.selectionStart = local;
-                _selectionController.activeHandleIndex = null;
-                _freehandPath
-                  ..clear()
-                  ..add(local);
+                if (_selectionController.isDraggingHandle) {
+                  _magnifierPosition = details.localFocalPoint;
+                } else {
+                  _freehandPath
+                    ..clear()
+                    ..add(local);
+                }
               });
             }
             _reportIdle();
@@ -182,22 +176,19 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
               mapSize,
               mapOffset,
             );
-            if (_selectionController.activeHandleIndex != null &&
-                _selectionController.points.length >=
-                    CleaningZoneMission.minPoints) {
-              final next = List<MapPoint>.from(_selectionController.points);
-              next[_selectionController.activeHandleIndex!] =
-                  MapGeometry.fromLocal(local, mapSize, _mapConfig);
+            if (_selectionController.moveActiveHandle(
+              local,
+              mapSize,
+              _mapConfig,
+            )) {
               setState(() {
-                _selectionController.points = next;
                 _magnifierPosition = details.localFocalPoint;
                 _emitSelection();
               });
               return;
             }
-            if (_selectionController.selectionStart != null &&
-                _selectionController.points.length <
-                    _selectionController.vertexCount) {
+            if (_selectionController.isDrawing &&
+                !_selectionController.isSelectionComplete) {
               setState(() => _freehandPath.add(local));
               _reportIdle();
             }
@@ -207,25 +198,21 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
             _lastScale = 1.0;
             final wasTransforming = _wasTransforming;
             _wasTransforming = false;
-            final wasDrawing = _selectionController.selectionStart != null;
+            final wasDrawing = _selectionController.isDrawing;
             setState(() {
-              if (!wasTransforming && wasDrawing) {
-                _selectionController.updatePolygonFromPath(
-                  _freehandPath,
-                  mapSize,
-                  _mapConfig,
-                );
-              }
-              _selectionController.selectionStart = null;
-              if (!wasTransforming &&
-                  _selectionController.points.length ==
-                      _selectionController.vertexCount &&
-                  _selectionController.activeHandleIndex == null) {
+              final completedFreehand = _selectionController.finishGesture(
+                _freehandPath,
+                mapSize,
+                config: _mapConfig,
+                wasTransforming: wasTransforming,
+              );
+              if (completedFreehand) {
                 widget.onLog?.call(
-                  '🖐️ ${_selectionController.vertexCount}点の範囲を選択しました',
+                  AppStrings.freehandSelectedLog(
+                    _selectionController.vertexCount,
+                  ),
                 );
               }
-              _selectionController.activeHandleIndex = null;
               _freehandPath.clear();
               _magnifierPosition = null;
             });
@@ -305,7 +292,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
       BuildContext context,
       Object error,
       StackTrace? trace,
-    ) => const Center(child: Text('地図画像を読み込めません'));
+    ) => const Center(child: Text(AppStrings.mapImageLoadError));
     return isAsset
         ? Image.asset(path, fit: BoxFit.fill, errorBuilder: errorBuilder)
         : Image.file(File(path), fit: BoxFit.fill, errorBuilder: errorBuilder);

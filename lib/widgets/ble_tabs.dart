@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models/app_notice.dart';
+import '../models/ble_status.dart';
 import '../models/cleaning_zone.dart';
 import '../models/map_config.dart';
 import '../models/map_geometry.dart';
 import '../models/send_button_state.dart';
 import '../models/shape_template.dart';
-import '../services/ble_connection.dart';
 import '../services/map_selection_controller.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_strings.dart';
@@ -122,13 +122,18 @@ class ShapeTemplateButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<ShapeTemplate>(
-      tooltip: 'ひな形',
+      tooltip: AppStrings.shapeTemplateTooltip,
       onSelected: onSelected,
       itemBuilder: (context) => [
         for (final template in ShapeTemplate.all)
           PopupMenuItem<ShapeTemplate>(
             value: template,
-            child: Text('${template.label}（${template.vertexCount}点）'),
+            child: Text(
+              AppStrings.shapeTemplateItem(
+                template.label,
+                template.vertexCount,
+              ),
+            ),
           ),
       ],
       child: const GlassIconButton(icon: Icons.star_outline),
@@ -160,7 +165,10 @@ class VertexCountSlider extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            Text('点数 $value', style: const TextStyle(color: Colors.white)),
+            Text(
+              AppStrings.vertexCountLabel(value),
+              style: const TextStyle(color: Colors.white),
+            ),
             Expanded(
               child: Slider(
                 value: value.toDouble(),
@@ -211,43 +219,35 @@ class MapSwitchTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(0, 72, 0, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    AppStrings.mapsTitle,
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ),
-                Expanded(
-                  child: MapManagementPanel(
-                    activeMap: activeMap,
-                    maps: maps,
-                    onSelect: onMapSelected,
-                    onAdd: onMapAdded,
-                    onDelete: onMapDeleted,
-                    onDone: onDone,
-                    receiveHost: mapReceiveHost,
-                  ),
-                ),
-              ],
+    return _TabWithStatusOverlay(
+      status: status,
+      announcement: statusAnnouncement,
+      notice: notice,
+      onStatusPressed: onStatusPressed,
+      padding: const EdgeInsets.fromLTRB(0, 72, 0, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              AppStrings.mapsTitle,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
           ),
-        ),
-        _TopLeftStatus(
-          status: status,
-          announcement: statusAnnouncement,
-          notice: notice,
-          onPressed: onStatusPressed,
-        ),
-      ],
+          Expanded(
+            child: MapManagementPanel(
+              activeMap: activeMap,
+              maps: maps,
+              onSelect: onMapSelected,
+              onAdd: onMapAdded,
+              onDelete: onMapDeleted,
+              onDone: onDone,
+              receiveHost: mapReceiveHost,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -274,23 +274,15 @@ class ScheduleTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final host = this.host;
-    return Stack(
-      children: [
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 72, 16, 0),
-            child: host == null
-                ? const Text(AppStrings.scheduleEmpty)
-                : SchedulePanel(host: host),
-          ),
-        ),
-        _TopLeftStatus(
-          status: status,
-          announcement: statusAnnouncement,
-          notice: notice,
-          onPressed: onStatusPressed,
-        ),
-      ],
+    return _TabWithStatusOverlay(
+      status: status,
+      announcement: statusAnnouncement,
+      notice: notice,
+      onStatusPressed: onStatusPressed,
+      padding: const EdgeInsets.fromLTRB(16, 72, 16, 0),
+      child: host == null
+          ? const Text(AppStrings.scheduleEmpty)
+          : SchedulePanel(host: host),
     );
   }
 }
@@ -313,47 +305,75 @@ class BleLogsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _TabWithStatusOverlay(
+      status: status,
+      announcement: statusAnnouncement,
+      notice: notice,
+      onStatusPressed: onStatusPressed,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 56),
+          const Text(
+            AppStrings.logsTitle,
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.logBackground,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.all(8),
+              child: ListView.builder(
+                itemCount: logs.length,
+                itemBuilder: (_, index) => Text(
+                  logs[index],
+                  style: const TextStyle(
+                    color: AppColors.logText,
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 上部に Bluetooth 状態・通知バーを重ねるタブ共通の枠。
+class _TabWithStatusOverlay extends StatelessWidget {
+  final BleStatus status;
+  final String? announcement;
+  final AppNotice? notice;
+  final VoidCallback onStatusPressed;
+  final EdgeInsetsGeometry padding;
+  final Widget child;
+
+  const _TabWithStatusOverlay({
+    required this.status,
+    required this.announcement,
+    required this.notice,
+    required this.onStatusPressed,
+    required this.padding,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Stack(
       children: [
         SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 56),
-                const Text(
-                  AppStrings.logsTitle,
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.logBackground,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: ListView.builder(
-                      itemCount: logs.length,
-                      itemBuilder: (_, index) => Text(
-                        logs[index],
-                        style: const TextStyle(
-                          color: AppColors.logText,
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          child: Padding(padding: padding, child: child),
         ),
         _TopLeftStatus(
           status: status,
-          announcement: statusAnnouncement,
+          announcement: announcement,
           notice: notice,
           onPressed: onStatusPressed,
         ),

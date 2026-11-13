@@ -35,6 +35,12 @@ class MapSelectionController {
 
   bool get hasSelection => _points.length >= CleaningZoneMission.minPoints;
 
+  bool get isSelectionComplete => _points.length >= vertexCount;
+
+  bool get isDrawing => selectionStart != null;
+
+  bool get isDraggingHandle => activeHandleIndex != null && hasSelection;
+
   /// 頂点数を変更する。すでに範囲が選択されていれば、その範囲の頂点数も更新する。
   void setVertexCount(int count) {
     final next = count.clamp(
@@ -64,14 +70,66 @@ class MapSelectionController {
     _points = MapGeometry.resamplePolygon(base, next);
   }
 
+  void cancelGesture() {
+    selectionStart = null;
+    activeHandleIndex = null;
+  }
+
+  /// 単一ポインタの操作開始。ハンドル掴みまたは新規フリーハンド描画を開始したら true。
+  bool startGesture(Offset localPosition, Size size, [MapConfig? config]) {
+    final hit = hitHandle(localPosition, size, config);
+    if (isSelectionComplete) {
+      if (hit == null) return false;
+      activeHandleIndex = hit;
+      return true;
+    }
+    selectionStart = localPosition;
+    activeHandleIndex = null;
+    return true;
+  }
+
+  /// 掴んでいるハンドルを [localPosition] へ移動する。移動したら true。
+  bool moveActiveHandle(Offset localPosition, Size size, [MapConfig? config]) {
+    if (!isDraggingHandle) return false;
+    final next = List<MapPoint>.from(_points);
+    next[activeHandleIndex!] = MapGeometry.fromLocal(
+      localPosition,
+      size,
+      config,
+    );
+    points = next;
+    return true;
+  }
+
+  /// ジェスチャー終了時にフリーハンド軌跡を確定する。
+  /// 新規にフリーハンドで範囲が確定したとき true を返す。
+  bool finishGesture(
+    List<Offset> freehandPath,
+    Size size, {
+    MapConfig? config,
+    required bool wasTransforming,
+  }) {
+    final wasDrawing = isDrawing;
+    final wasHandleDrag = activeHandleIndex != null;
+    if (!wasTransforming && wasDrawing) {
+      updatePolygonFromPath(freehandPath, size, config);
+    }
+    final completedFreehand =
+        !wasTransforming &&
+        !wasHandleDrag &&
+        wasDrawing &&
+        _points.length == vertexCount;
+    cancelGesture();
+    return completedFreehand;
+  }
+
   void clear() {
     _points = <MapPoint>[];
     _basePoints = const <MapPoint>[];
     _lastPath = null;
     _lastSize = null;
     _lastConfig = null;
-    selectionStart = null;
-    activeHandleIndex = null;
+    cancelGesture();
   }
 
   int? hitHandle(Offset localPosition, Size size, [MapConfig? config]) {

@@ -19,15 +19,17 @@ import '../services/map_selection_controller.dart';
 import '../services/permission_gateway.dart';
 import '../services/schedule_repository.dart';
 import '../theme/app_strings.dart';
+import 'log_buffer.dart';
 import 'map_catalog.dart';
 import 'notice_board.dart';
 import 'robot_map_receiver.dart';
 import 'schedule_coordinator.dart';
 import 'send_mission_tracker.dart';
 
-/// 画面の協調役（facade）。BLE接続・権限・送信進行・時限表示・予定同期の
-/// 詳細は [BleConnection] / [PermissionGateway] / [SendMissionTracker] /
-/// [NoticeBoard] / [ScheduleCoordinator] に委ね、このクラスは配線と公開状態に徹する。
+/// 画面の協調役（facade）。BLE接続・権限・送信進行・時限表示・予定同期・
+/// ログ保持の詳細は [BleConnection] / [PermissionGateway] / [SendMissionTracker] /
+/// [NoticeBoard] / [ScheduleCoordinator] / [LogBuffer] に委ね、
+/// このクラスは配線と公開状態に徹する。
 class BleHomeController extends ChangeNotifier {
   BleHomeController({
     BleConnectionFactory? connectionFactory,
@@ -37,11 +39,14 @@ class BleHomeController extends ChangeNotifier {
     ScheduleCoordinator? scheduleCoordinator,
     RobotMapReceiver? robotMapReceiver,
     MapImageStorage Function()? mapImageStorageFactory,
+    LogBuffer? logBuffer,
   }) : _permissions = permissionGateway ?? const DefaultPermissionGateway(),
        _catalog = MapCatalog(
          repository: mapRepository ?? MapConfigRepository.instance,
        ),
-       _mapImageStorageFactory = mapImageStorageFactory ?? MapImageStorage.new {
+       _mapImageStorageFactory =
+           mapImageStorageFactory ?? MapImageStorage.new,
+       _logBuffer = logBuffer ?? LogBuffer() {
     _robotMapReceiver = robotMapReceiver;
     _connection = (connectionFactory ?? BleService.new)(
       onLog: _addServiceLog,
@@ -73,6 +78,7 @@ class BleHomeController extends ChangeNotifier {
   final PermissionGateway _permissions;
   final MapCatalog _catalog;
   final MapImageStorage Function() _mapImageStorageFactory;
+  final LogBuffer _logBuffer;
   late final ScheduleCoordinator? _scheduleCoordinator;
   RobotMapReceiver? _robotMapReceiver;
 
@@ -92,7 +98,6 @@ class BleHomeController extends ChangeNotifier {
   /// フリーハンド描画中でないこと。MapSelectionAreaが報告する。
   /// ヒント表示条件（未選択かつ描画中でない）の後半を担う。
   bool _selectionIdle = true;
-  final List<String> _logs = [];
   int selectedTabIndex = 1;
   bool _isDisposed = false;
   bool _autoConnectStarted = false;
@@ -118,7 +123,7 @@ class BleHomeController extends ChangeNotifier {
 
   bool get sendCompleted => _sendTracker.sendCompleted;
   SendButtonState get sendButtonState => _sendTracker.buttonState;
-  List<String> get logs => List.unmodifiable(_logs);
+  List<String> get logs => _logBuffer.entries;
   List<MapPoint> get selectedMapPoints =>
       List<MapPoint>.unmodifiable(mapSelection.points);
   bool get canSendSelectedMap => canSendPolygon(mapSelection.points);
@@ -179,7 +184,7 @@ class BleHomeController extends ChangeNotifier {
   void applyShapeTemplate(ShapeTemplate template) {
     mapSelection.vertexCount = template.vertexCount;
     setSelectedMapPoints(template.placeOn(_catalog.active));
-    addLog('⭐ 「${template.label}」のひな形を配置しました');
+    addLog(AppStrings.shapeTemplatePlacedLog(template.label));
   }
 
   void clearSelection() {
@@ -399,15 +404,7 @@ class BleHomeController extends ChangeNotifier {
 
   void _addLog(String message, {bool trim = false}) {
     if (_isDisposed) return;
-    final now = DateTime.now();
-    final timestamp =
-        '[${now.hour.toString().padLeft(2, '0')}:'
-        '${now.minute.toString().padLeft(2, '0')}:'
-        '${now.second.toString().padLeft(2, '0')}]';
-    _logs.insert(0, '$timestamp $message');
-    if (trim && _logs.length > 100) {
-      _logs.removeLast();
-    }
+    _logBuffer.add(message, trim: trim);
     notifyListeners();
   }
 

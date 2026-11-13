@@ -1,19 +1,11 @@
 import 'dart:typed_data';
 
+import '../models/ble_status.dart';
 import '../models/cleaning_zone.dart';
 import '../models/robot_map.dart';
 import '../models/schedule_entry.dart';
 
-/// BLE接続の状態
-enum BleStatus {
-  idle,
-  scanning,
-  connecting,
-  connected,
-  sending,
-  disconnected,
-  error,
-}
+export '../models/ble_status.dart';
 
 /// BLE接続の抽象。Controllerはこの型だけに依存し、実体は外から注入する。
 /// 単体テストではFakeを差し替え、実機なしでControllerを検証できる。

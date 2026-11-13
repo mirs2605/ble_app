@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/app_notice.dart';
-import '../services/ble_connection.dart';
+import '../models/ble_status.dart';
 
 /// 画面に表示する日本語文言の集約ポイント。
 /// ControllerやWidgetに文字列リテラルを散らばらせないための疎結合層。
@@ -25,6 +25,17 @@ abstract final class AppStrings {
   static const autoConnectGuide = '📡 BLE サーバーに近づくと自動で接続します';
   static String permissionMissingDetails(List<String> deniedNames) =>
       '❌ パーミッション不足: ${deniedNames.join(', ')}';
+  static String shapeTemplatePlacedLog(String label) =>
+      '⭐ 「$label」のひな形を配置しました';
+  static String freehandSelectedLog(int count) => '🖐️ $count点の範囲を選択しました';
+
+  // --- 範囲選択・ひな形 ---
+  static const shapeTemplateTooltip = 'ひな形';
+  static String shapeTemplateItem(String label, int vertexCount) =>
+      '$label（$vertexCount点）';
+  static String vertexCountLabel(int count) => '点数 $count';
+  static const mapImageLoadError = '地図画像を読み込めません';
+  static const openPermissionSettingsTooltip = '権限設定を開く';
 
   // --- 送信ボタン ---
   static const sending = '送信中';
@@ -87,7 +98,11 @@ abstract final class AppStrings {
   // --- Bluetoothステータス ---
   static const showBluetoothStatus = 'Bluetoothステータスを表示';
 
-  // --- タブ見出し ---
+  // --- タブ見出し・ナビゲーション ---
+  static const mapsTabLabel = '地図';
+  static const mapTabLabel = 'マップ';
+  static const scheduleTabLabel = '予定';
+  static const logsTabLabel = 'ログ';
   static const logsTitle = 'ログ';
 
   /// 接続状態の表示ラベル。
