@@ -43,9 +43,6 @@ class BleHomeTab extends StatelessWidget {
 
   final MapConfig activeMap;
 
-  /// 定時清掃ダイアログの窓口。null なら定時清掃ボタンを出さない。
-  final ScheduleDialogHost? scheduleHost;
-
   const BleHomeTab({
     super.key,
     required this.mapSelection,
@@ -66,7 +63,6 @@ class BleHomeTab extends StatelessWidget {
     this.onVertexCountChanged,
     this.onShapeTemplateSelected,
     required this.activeMap,
-    this.scheduleHost,
   });
 
   @override
@@ -98,9 +94,6 @@ class BleHomeTab extends StatelessWidget {
           sendButtonState: sendButtonState,
           onClear: onClearSelection,
           onSend: onSend,
-          onSchedule: scheduleHost == null
-              ? null
-              : () => showScheduleDialog(context, scheduleHost!),
           extraAction: onShapeTemplateSelected == null
               ? null
               : ShapeTemplateButton(onSelected: onShapeTemplateSelected!),
@@ -259,8 +252,7 @@ class MapSwitchTab extends StatelessWidget {
   }
 }
 
-/// 予定タブ。登録済みの定時清掃を確認し、有効切替・削除・ロボットとの同期を行う。
-/// 追加は、地図タブで範囲を囲んでから時計ボタンで行う。
+/// 予定タブ。登録済みの定時清掃を確認し、有効切替・削除・追加・ロボットとの同期を行う。
 class ScheduleTab extends StatelessWidget {
   final BleStatus status;
   final String? statusAnnouncement;
@@ -289,55 +281,7 @@ class ScheduleTab extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 72, 16, 0),
             child: host == null
                 ? const Text(AppStrings.scheduleEmpty)
-                : ListenableBuilder(
-                    listenable: host.listenable,
-                    builder: (context, _) {
-                      final entries = host.entries();
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              const Expanded(
-                                child: Text(
-                                  AppStrings.scheduleTabTitle,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                key: const Key('schedule-sync'),
-                                tooltip: AppStrings.scheduleSync,
-                                onPressed: host.canSync() ? host.onSync : null,
-                                icon: const Icon(Icons.sync),
-                              ),
-                            ],
-                          ),
-                          Expanded(
-                            child: entries.isEmpty
-                                ? const Align(
-                                    alignment: Alignment.topLeft,
-                                    child: Padding(
-                                      padding: EdgeInsets.only(top: 8),
-                                      child: Text(AppStrings.scheduleEmpty),
-                                    ),
-                                  )
-                                : ListView(
-                                    children: [
-                                      for (final entry in entries)
-                                        ScheduleEntryTile(
-                                          entry: entry,
-                                          host: host,
-                                        ),
-                                    ],
-                                  ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                : SchedulePanel(host: host),
           ),
         ),
         _TopLeftStatus(

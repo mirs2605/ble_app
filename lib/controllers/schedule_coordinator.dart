@@ -147,17 +147,20 @@ class ScheduleCoordinator extends ChangeNotifier {
     Future.microtask(() => syncSchedules(announce: false));
   }
 
-  /// [ScheduleDialog] に渡すための窓口を生成する。
-  ScheduleDialogHost createDialogHost() => ScheduleDialogHost(
-    listenable: this,
-    entries: () => schedules,
-    canAdd: () => canAdd,
-    canSync: () => canSync,
-    onAdd: (h, m, days) => addSchedule(hour: h, minute: m, weekdays: days),
-    onToggle: setScheduleEnabled,
-    onDelete: deleteSchedule,
-    onSync: syncSchedules,
-  );
+  /// 予定画面に渡すための窓口を生成する。
+  ScheduleDialogHost createDialogHost({Listenable? extraListenable}) =>
+      ScheduleDialogHost(
+        listenable: extraListenable == null
+            ? this
+            : Listenable.merge([this, extraListenable]),
+        entries: () => schedules,
+        canAdd: () => canAdd,
+        canSync: () => canSync,
+        onAdd: (h, m, days) => addSchedule(hour: h, minute: m, weekdays: days),
+        onToggle: setScheduleEnabled,
+        onDelete: deleteSchedule,
+        onSync: syncSchedules,
+      );
 
   static final _random = Random.secure();
 

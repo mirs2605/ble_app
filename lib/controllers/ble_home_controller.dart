@@ -257,9 +257,9 @@ class BleHomeController extends ChangeNotifier {
   /// 予定機能が使えるか（初期化時にリポジトリまたはコーディネータが渡されている）。
   bool get scheduleAvailable => _scheduleCoordinator != null;
 
-  /// ダイアログ表示用のホスト窓口。
+  /// 予定タブ表示用のホスト窓口。
   ScheduleDialogHost? get scheduleDialogHost =>
-      _scheduleCoordinator?.createDialogHost();
+      _scheduleCoordinator?.createDialogHost(extraListenable: this);
 
   /// 画面に出す予定（削除済みを除く）。
   List<ScheduleEntry> get schedules =>

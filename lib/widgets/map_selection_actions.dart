@@ -4,7 +4,6 @@ import '../models/send_button_state.dart';
 import '../theme/app_strings.dart';
 import '../theme/pill_style.dart';
 import 'frosted_glass.dart';
-import 'glass_icon_button.dart';
 import 'mission_send_button.dart';
 
 class MapSelectionActions extends StatelessWidget {
@@ -13,9 +12,8 @@ class MapSelectionActions extends StatelessWidget {
   final bool canSend;
   final VoidCallback onClear;
   final VoidCallback onSend;
-  final VoidCallback? onSchedule;
 
-  /// 予定ボタンの隣に並べる追加ボタン（ひな形など）。
+  /// 下部中央に並べる追加ボタン（ひな形など）。
   final Widget? extraAction;
   final SendButtonState sendButtonState;
 
@@ -26,7 +24,6 @@ class MapSelectionActions extends StatelessWidget {
     required this.canSend,
     required this.onClear,
     required this.onSend,
-    this.onSchedule,
     this.extraAction,
     this.sendButtonState = SendButtonState.ready,
   });
@@ -60,26 +57,12 @@ class MapSelectionActions extends StatelessWidget {
                 ),
               ),
             ),
-          if (onSchedule != null || extraAction != null)
+          if (extraAction != null)
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ?extraAction,
-                    if (extraAction != null && onSchedule != null)
-                      const SizedBox(width: 12),
-                    if (onSchedule != null)
-                      GlassIconButton(
-                        key: const Key('schedule-open'),
-                        onPressed: onSchedule,
-                        tooltip: AppStrings.scheduleTooltip,
-                        icon: Icons.schedule,
-                      ),
-                  ],
-                ),
+                child: extraAction,
               ),
             ),
           if (showSend)
