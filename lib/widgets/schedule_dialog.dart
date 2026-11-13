@@ -1,54 +1,26 @@
 import 'package:flutter/material.dart';
 
-import '../models/cleaning_schedule.dart';
+import '../models/schedule_dialog_host.dart';
+import '../models/schedule_entry.dart';
 import '../theme/app_strings.dart';
 
-/// 定時清掃ダイアログの操作結果。
-sealed class ScheduleDialogResult {
-  const ScheduleDialogResult();
-}
+export '../models/schedule_dialog_host.dart';
 
-class ScheduleReserve extends ScheduleDialogResult {
-  final TimeOfDay time;
-  final Set<int> weekdays;
+/// 予定タブの本体。予定の一覧・有効切替・削除・追加・ロボットとの同期を行う。
+class SchedulePanel extends StatefulWidget {
+  final ScheduleDialogHost host;
 
-  const ScheduleReserve({required this.time, required this.weekdays});
-}
-
-class ScheduleCancel extends ScheduleDialogResult {
-  const ScheduleCancel();
-}
-
-/// 開始時刻と曜日を選び、予約または解除を返すダイアログ。
-Future<ScheduleDialogResult?> showScheduleDialog(
-  BuildContext context, {
-  required bool canReserve,
-  required bool canCancel,
-}) {
-  return showDialog<ScheduleDialogResult>(
-    context: context,
-    builder: (_) =>
-        ScheduleDialog(canReserve: canReserve, canCancel: canCancel),
-  );
-}
-
-class ScheduleDialog extends StatefulWidget {
-  final bool canReserve;
-  final bool canCancel;
-
-  const ScheduleDialog({
-    super.key,
-    required this.canReserve,
-    required this.canCancel,
-  });
+  const SchedulePanel({super.key, required this.host});
 
   @override
-  State<ScheduleDialog> createState() => _ScheduleDialogState();
+  State<SchedulePanel> createState() => _SchedulePanelState();
 }
 
-class _ScheduleDialogState extends State<ScheduleDialog> {
+class _SchedulePanelState extends State<SchedulePanel> {
   TimeOfDay _time = const TimeOfDay(hour: 9, minute: 0);
-  final Set<int> _weekdays = {...CleaningScheduleMission.everyDay};
+  final Set<int> _weekdays = {...ScheduleEntry.everyDay};
+
+  ScheduleDialogHost get _host => widget.host;
 
   Future<void> _pickTime() async {
     final picked = await showTimePicker(context: context, initialTime: _time);
@@ -59,66 +31,124 @@ class _ScheduleDialogState extends State<ScheduleDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text(AppStrings.scheduleTitle),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return ListenableBuilder(
+      listenable: _host.listenable,
+      builder: (context, _) {
+        final entries = _host.entries();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(AppStrings.scheduleHelp),
-            const SizedBox(height: 16),
-            const Text(AppStrings.scheduleTimeLabel),
-            const SizedBox(height: 4),
-            OutlinedButton.icon(
-              key: const Key('schedule-time'),
-              onPressed: _pickTime,
-              icon: const Icon(Icons.schedule),
-              label: Text(_time.format(context)),
-            ),
-            const SizedBox(height: 16),
-            const Text(AppStrings.scheduleWeekdaysLabel),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
+            Row(
               children: [
-                for (var i = 0; i < 7; i++)
-                  FilterChip(
-                    key: Key('schedule-weekday-${i + 1}'),
-                    label: Text(AppStrings.weekdayLabels[i]),
-                    selected: _weekdays.contains(i + 1),
-                    onSelected: (on) => setState(() {
-                      on ? _weekdays.add(i + 1) : _weekdays.remove(i + 1);
-                    }),
+                const Expanded(
+                  child: Text(
+                    AppStrings.scheduleTabTitle,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
+                ),
+                IconButton(
+                  key: const Key('schedule-sync'),
+                  tooltip: AppStrings.scheduleSync,
+                  onPressed: _host.canSync() ? _host.onSync : null,
+                  icon: const Icon(Icons.sync),
+                ),
               ],
             ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(AppStrings.scheduleHelp),
+                    const SizedBox(height: 12),
+                    if (entries.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text(AppStrings.scheduleEmpty),
+                      ),
+                    for (final entry in entries)
+                      ScheduleEntryTile(entry: entry, host: _host),
+                    const Divider(height: 24),
+                    const Text(AppStrings.scheduleAddTitle),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      key: const Key('schedule-time'),
+                      onPressed: _pickTime,
+                      icon: const Icon(Icons.schedule),
+                      label: Text(_time.format(context)),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        for (var i = 0; i < 7; i++)
+                          FilterChip(
+                            key: Key('schedule-weekday-${i + 1}'),
+                            label: Text(AppStrings.weekdayLabels[i]),
+                            selected: _weekdays.contains(i + 1),
+                            onSelected: (on) => setState(() {
+                              on
+                                  ? _weekdays.add(i + 1)
+                                  : _weekdays.remove(i + 1);
+                            }),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton(
+                        key: const Key('schedule-add'),
+                        onPressed: _host.canAdd() && _weekdays.isNotEmpty
+                            ? () => _host.onAdd(_time.hour, _time.minute, {
+                                ..._weekdays,
+                              })
+                            : null,
+                        child: const Text(AppStrings.scheduleAdd),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
-        ),
+        );
+      },
+    );
+  }
+}
+
+/// 予定1件の行（時刻・曜日・有効切替・削除）。
+class ScheduleEntryTile extends StatelessWidget {
+  const ScheduleEntryTile({super.key, required this.entry, required this.host});
+
+  final ScheduleEntry entry;
+  final ScheduleDialogHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      key: Key('schedule-entry-${entry.id}'),
+      contentPadding: EdgeInsets.zero,
+      title: Text(entry.timeText),
+      subtitle: Text(AppStrings.weekdaysText(entry.weekdays)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Switch(
+            key: Key('schedule-toggle-${entry.id}'),
+            value: entry.enabled,
+            onChanged: (on) => host.onToggle(entry.id, on),
+          ),
+          IconButton(
+            key: Key('schedule-delete-${entry.id}'),
+            tooltip: AppStrings.scheduleDeleteTooltip,
+            onPressed: () => host.onDelete(entry.id),
+            icon: const Icon(Icons.delete_outline),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text(AppStrings.cancel),
-        ),
-        TextButton(
-          key: const Key('schedule-cancel'),
-          onPressed: widget.canCancel
-              ? () => Navigator.pop(context, const ScheduleCancel())
-              : null,
-          child: const Text(AppStrings.scheduleCancelAction),
-        ),
-        FilledButton(
-          key: const Key('schedule-reserve'),
-          onPressed: widget.canReserve && _weekdays.isNotEmpty
-              ? () => Navigator.pop(
-                  context,
-                  ScheduleReserve(time: _time, weekdays: {..._weekdays}),
-                )
-              : null,
-          child: const Text(AppStrings.scheduleReserve),
-        ),
-      ],
     );
   }
 }

@@ -3,33 +3,71 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../models/app_notice.dart';
-import '../models/cleaning_schedule.dart';
 import '../models/cleaning_zone.dart';
 import '../models/map_config.dart';
+import '../models/map_geometry.dart';
+import '../models/map_receive_host.dart';
+import '../models/schedule_dialog_host.dart';
+import '../models/schedule_entry.dart';
+import '../models/shape_template.dart';
 import '../models/send_button_state.dart';
 import '../services/ble_connection.dart';
 import '../services/ble_service.dart';
 import '../services/map_config_repository.dart';
+import '../services/map_image_storage.dart';
 import '../services/map_selection_controller.dart';
 import '../services/permission_gateway.dart';
+import '../services/schedule_repository.dart';
 import '../theme/app_strings.dart';
+import 'log_buffer.dart';
+import 'map_catalog.dart';
 import 'notice_board.dart';
+import 'robot_map_receiver.dart';
+import 'schedule_coordinator.dart';
 import 'send_mission_tracker.dart';
 
-/// 画面の協調役（facade）。BLE接続・権限・送信進行・時限表示の
-/// 詳細は [BleConnection] / [PermissionGateway] / [SendMissionTracker] /
-/// [NoticeBoard] に委ね、このクラスは配線と公開状態に徹する。
+/// 画面の協調役（facade）。BLE接続・権限・送信進行・時限表示・予定同期・
+/// ログ保持の詳細は [BleConnection] / [PermissionGateway] / [SendMissionTracker] /
+/// [NoticeBoard] / [ScheduleCoordinator] / [LogBuffer] に委ね、
+/// このクラスは配線と公開状態に徹する。
 class BleHomeController extends ChangeNotifier {
   BleHomeController({
     BleConnectionFactory? connectionFactory,
     PermissionGateway? permissionGateway,
     MapConfigRepository? mapRepository,
+    ScheduleRepository? scheduleRepository,
+    ScheduleCoordinator? scheduleCoordinator,
+    RobotMapReceiver? robotMapReceiver,
+    MapImageStorage Function()? mapImageStorageFactory,
+    LogBuffer? logBuffer,
   }) : _permissions = permissionGateway ?? const DefaultPermissionGateway(),
-       _mapRepo = mapRepository ?? MapConfigRepository.instance {
+       _catalog = MapCatalog(
+         repository: mapRepository ?? MapConfigRepository.instance,
+       ),
+       _mapImageStorageFactory =
+           mapImageStorageFactory ?? MapImageStorage.new,
+       _logBuffer = logBuffer ?? LogBuffer() {
+    _robotMapReceiver = robotMapReceiver;
     _connection = (connectionFactory ?? BleService.new)(
       onLog: _addServiceLog,
       onStatusChanged: _handleStatusChanged,
     );
+    if (scheduleCoordinator != null) {
+      _scheduleCoordinator = scheduleCoordinator;
+    } else if (scheduleRepository != null) {
+      _scheduleCoordinator = ScheduleCoordinator(
+        repository: scheduleRepository,
+        connection: _connection,
+        selectedPolygon: () => mapSelection.points,
+        isConnected: () => _status == BleStatus.connected,
+        onLog: addLog,
+        onNotice: notifyNotice,
+      );
+    } else {
+      _scheduleCoordinator = null;
+    }
+    _scheduleCoordinator?.addListener(_guardedNotify);
+    _catalog.addListener(_guardedNotify);
     _statusBoard = NoticeBoard<String>(onChanged: _guardedNotify);
     _noticeBoard = NoticeBoard<AppNotice>(onChanged: _guardedNotify);
     unawaited(_startAutoConnect());
@@ -38,19 +76,20 @@ class BleHomeController extends ChangeNotifier {
 
   late final BleConnection _connection;
   final PermissionGateway _permissions;
-  final MapConfigRepository _mapRepo;
+  final MapCatalog _catalog;
+  final MapImageStorage Function() _mapImageStorageFactory;
+  final LogBuffer _logBuffer;
+  late final ScheduleCoordinator? _scheduleCoordinator;
+  RobotMapReceiver? _robotMapReceiver;
+
+  /// 接続が確立している間 true。接続の確立直後に一度だけ同期するための印。
+  bool _linkUp = false;
 
   BleStatus _status = BleStatus.idle;
   bool _permissionsPermanentlyDenied = false;
   late final NoticeBoard<String> _statusBoard;
   late final NoticeBoard<AppNotice> _noticeBoard;
   final SendMissionTracker _sendTracker = SendMissionTracker();
-
-  /// 現在表示中のマップ設定。DB読み込み完了まではBuiltinMapsのデフォルト値。
-  MapConfig _activeMapConfig = BuiltinMaps.gakuseigenkan;
-
-  /// マップ一覧。DB読み込み完了後に更新される。
-  List<MapConfig> _allMaps = [];
 
   /// 地図選択の唯一の所有者。MapSelectionAreaはこのインスタンスを
   /// 直接操作し、確定時にonChangedで通知する（値のミラーは持たない）。
@@ -59,7 +98,6 @@ class BleHomeController extends ChangeNotifier {
   /// フリーハンド描画中でないこと。MapSelectionAreaが報告する。
   /// ヒント表示条件（未選択かつ描画中でない）の後半を担う。
   bool _selectionIdle = true;
-  final List<String> _logs = [];
   int selectedTabIndex = 1;
   bool _isDisposed = false;
   bool _autoConnectStarted = false;
@@ -69,10 +107,10 @@ class BleHomeController extends ChangeNotifier {
   String? get statusAnnouncement => _statusBoard.value;
 
   /// 現在アクティブなマップ設定。
-  MapConfig get activeMapConfig => _activeMapConfig;
+  MapConfig get activeMapConfig => _catalog.active;
 
   /// 登録済みマップ一覧。
-  List<MapConfig> get allMaps => List.unmodifiable(_allMaps);
+  List<MapConfig> get allMaps => _catalog.all;
 
   /// 表示中の独立通知。一時通知（3秒）を優先し、なければ囲み促進のヒント。
   /// ヒント条件は従来の画面下表示と同一：未選択かつ描画中でないこと。
@@ -85,7 +123,7 @@ class BleHomeController extends ChangeNotifier {
 
   bool get sendCompleted => _sendTracker.sendCompleted;
   SendButtonState get sendButtonState => _sendTracker.buttonState;
-  List<String> get logs => List.unmodifiable(_logs);
+  List<String> get logs => _logBuffer.entries;
   List<MapPoint> get selectedMapPoints =>
       List<MapPoint>.unmodifiable(mapSelection.points);
   bool get canSendSelectedMap => canSendPolygon(mapSelection.points);
@@ -94,56 +132,25 @@ class BleHomeController extends ChangeNotifier {
     if (!_isDisposed) notifyListeners();
   }
 
-  /// DBからアクティブマップと一覧を読み込む。
-  Future<void> _loadMapConfig() async {
-    if (_isDisposed) return;
-    final active = await _mapRepo.activeMap();
-    final all = await _mapRepo.allMaps();
-    if (_isDisposed) return;
-    _activeMapConfig = active;
-    _allMaps = all;
-    notifyListeners();
-  }
+  Future<void> _loadMapConfig() => _catalog.load();
 
   /// アクティブマップを切り替える。
   Future<void> switchMap(MapConfig config) async {
-    if (_isDisposed) return;
-    final id = config.id;
-    if (id == null) return;
-    await _mapRepo.setActiveMap(id);
-    if (_isDisposed) return;
-    _activeMapConfig = config;
+    if (!await _catalog.switchTo(config) || _isDisposed) return;
     // マップ切り替え時は選択をリセットする。
     clearSelection();
-    notifyListeners();
   }
 
   /// マップを追加してアクティブにする。
   Future<void> addMap(MapConfig config) async {
-    if (_isDisposed) return;
-    final saved = await _mapRepo.addMap(config);
-    await _mapRepo.setActiveMap(saved.id!);
-    if (_isDisposed) return;
-    _activeMapConfig = saved;
-    _allMaps = await _mapRepo.allMaps();
+    if (!await _catalog.add(config) || _isDisposed) return;
     clearSelection();
-    notifyListeners();
   }
 
   /// マップを削除する。アクティブマップは削除不可。
   Future<void> deleteMap(MapConfig config) async {
-    if (_isDisposed) return;
-    final id = config.id;
-    if (id == null) return;
-    try {
-      await _mapRepo.deleteMap(id);
-    } on StateError catch (e) {
-      addLog('❌ ${e.message}');
-      return;
-    }
-    if (_isDisposed) return;
-    _allMaps = await _mapRepo.allMaps();
-    notifyListeners();
+    final error = await _catalog.delete(config);
+    if (error != null) addLog('❌ $error');
   }
 
   void selectTab(int index) {
@@ -156,6 +163,28 @@ class BleHomeController extends ChangeNotifier {
     mapSelection.points = List<MapPoint>.from(points);
     _sendTracker.resetProgress();
     notifyListeners();
+  }
+
+  /// 選択範囲の頂点数を変更する。すでに範囲が選択されていればその頂点数も変更する。
+  void setVertexCount(int count) {
+    final next = count.clamp(
+      MapGeometry.minFreehandVertexCount,
+      MapGeometry.maxFreehandVertexCount,
+    );
+    if (next == mapSelection.vertexCount &&
+        (!mapSelection.hasSelection || mapSelection.points.length == next)) {
+      return;
+    }
+    mapSelection.setVertexCount(next);
+    _sendTracker.resetProgress();
+    notifyListeners();
+  }
+
+  /// ひな形の形を選択範囲として地図中央に置く。頂点数もひな形に合わせる。
+  void applyShapeTemplate(ShapeTemplate template) {
+    mapSelection.vertexCount = template.vertexCount;
+    setSelectedMapPoints(template.placeOn(_catalog.active));
+    addLog(AppStrings.shapeTemplatePlacedLog(template.label));
   }
 
   void clearSelection() {
@@ -230,50 +259,79 @@ class BleHomeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 選択中の範囲を、毎週 [weekdays] の [hour]:[minute] に清掃する予定として
-  /// ロボットへ預ける。時刻の判定と開始はロボット側が行う。
-  Future<void> sendSchedule({
+  // ─────────────────────────────────────────
+  // 定時清掃の予定（ScheduleCoordinator へ委譲）
+  // ─────────────────────────────────────────
+
+  /// 予定機能が使えるか（初期化時にリポジトリまたはコーディネータが渡されている）。
+  bool get scheduleAvailable => _scheduleCoordinator != null;
+
+  /// 予定タブ表示用のホスト窓口。
+  ScheduleDialogHost? get scheduleDialogHost =>
+      _scheduleCoordinator?.createDialogHost(extraListenable: this);
+
+  /// 画面に出す予定（削除済みを除く）。
+  List<ScheduleEntry> get schedules =>
+      _scheduleCoordinator?.schedules ?? const [];
+
+  /// 選択中の範囲で予定を追加できるか。
+  bool get canAddSchedule => _scheduleCoordinator?.canAdd ?? false;
+
+  /// 予定同期が可能か（接続中）。
+  bool get canSyncSchedules => _scheduleCoordinator?.canSync ?? false;
+
+  /// 選択中の範囲を予定として追加する。
+  Future<void> addSchedule({
     required int hour,
     required int minute,
     required Set<int> weekdays,
-  }) async {
-    final points = List<MapPoint>.from(mapSelection.points);
-    if (points.isEmpty) {
-      addLog('❌ ${AppStrings.specifyRange}');
-      notifyNotice(AppNotice.specifyRange);
-      return;
-    }
-    final schedule = CleaningScheduleMission(
-      hour: hour,
-      minute: minute,
-      weekdays: weekdays,
-      zone: CleaningZoneMission(polygon: points),
+  }) =>
+      _scheduleCoordinator?.addSchedule(
+        hour: hour,
+        minute: minute,
+        weekdays: weekdays,
+      ) ??
+      Future.value();
+
+  /// 予定の有効/無効を切り替える。
+  Future<void> setScheduleEnabled(String id, bool enabled) =>
+      _scheduleCoordinator?.setScheduleEnabled(id, enabled) ?? Future.value();
+
+  /// 予定を削除する（墓標化）。
+  Future<void> deleteSchedule(String id) =>
+      _scheduleCoordinator?.deleteSchedule(id) ?? Future.value();
+
+  /// ロボットと予定を突き合わせる。
+  Future<void> syncSchedules({bool announce = true}) =>
+      _scheduleCoordinator?.syncSchedules(announce: announce) ?? Future.value();
+
+  // ─────────────────────────────────────────
+  // ロボットの地図の受信（RobotMapReceiver へ委譲）
+  // ─────────────────────────────────────────
+
+  RobotMapReceiver get _mapReceiver => _robotMapReceiver ??= () {
+    final storage = _mapImageStorageFactory();
+    final receiver = RobotMapReceiver(
+      connection: _connection,
+      saveImage: storage.saveBytes,
+      deleteImage: storage.delete,
+      addMap: addMap,
+      isConnected: () => _status == BleStatus.connected,
+      onLog: addLog,
     );
-    if (!schedule.isValid) {
-      addLog('❌ ${AppStrings.invalidSchedule}');
-      notifyNotice(AppNotice.invalidSchedule);
-      return;
-    }
-    final sent = await _connection.sendCleaningSchedule(schedule);
-    if (_isDisposed) return;
-    notifyNotice(sent ? AppNotice.scheduleDone : AppNotice.sendFailed);
+    return receiver;
+  }();
+
+  /// 地図管理ダイアログに渡す、ロボットの地図を受信するための窓口。
+  MapReceiveHost get mapReceiveHost {
+    final receiver = _mapReceiver;
+    return MapReceiveHost(
+      listenable: Listenable.merge([receiver, this]),
+      canReceive: () => receiver.canReceive,
+      progress: () => receiver.busy ? receiver.progress : null,
+      onReceive: receiver.receive,
+    );
   }
-
-  /// ロボットに預けた定時清掃の予定を解除する。
-  Future<void> cancelSchedule() async {
-    final sent = await _connection.cancelCleaningSchedule();
-    if (_isDisposed) return;
-    notifyNotice(sent ? AppNotice.scheduleCanceled : AppNotice.sendFailed);
-  }
-
-  /// 予約が可能か（接続済みで、有効な範囲が選択されている）。
-  /// 清掃範囲の送信済み状態には左右されない。
-  bool get canReserveSchedule =>
-      _status == BleStatus.connected &&
-      CleaningZoneMission(polygon: mapSelection.points).isValid;
-
-  /// 予定の解除が可能か（接続済み）。
-  bool get canCancelSchedule => _status == BleStatus.connected;
 
   /// 送信ボタン活性条件。数値タブはフォーム値で判定する。
   bool canSendPolygon(List<MapPoint> polygon) =>
@@ -312,6 +370,13 @@ class BleHomeController extends ChangeNotifier {
 
   void _handleStatusChanged(BleStatus status) {
     if (_isDisposed) return;
+    final up = status == BleStatus.connected || status == BleStatus.sending;
+    final becameUp = up && !_linkUp;
+    _linkUp = up;
+    if (becameUp) {
+      // _status の更新後に走らせる（同期は接続済みを前提にする）。
+      _scheduleCoordinator?.onLinkEstablished();
+    }
     // 送信中はBTアイコンを反応させない。送信表示は送信ボタンと
     // 独立通知バー側に任せ、接続表示は維持する。
     // BLE層内部の status は sending になるため自動再スキャン抑止は効く。
@@ -339,15 +404,7 @@ class BleHomeController extends ChangeNotifier {
 
   void _addLog(String message, {bool trim = false}) {
     if (_isDisposed) return;
-    final now = DateTime.now();
-    final timestamp =
-        '[${now.hour.toString().padLeft(2, '0')}:'
-        '${now.minute.toString().padLeft(2, '0')}:'
-        '${now.second.toString().padLeft(2, '0')}]';
-    _logs.insert(0, '$timestamp $message');
-    if (trim && _logs.length > 100) {
-      _logs.removeLast();
-    }
+    _logBuffer.add(message, trim: trim);
     notifyListeners();
   }
 
@@ -356,6 +413,9 @@ class BleHomeController extends ChangeNotifier {
     _isDisposed = true;
     _connection.stopAutoConnect();
     unawaited(_connection.dispose());
+    _scheduleCoordinator?.dispose();
+    _robotMapReceiver?.dispose();
+    _catalog.dispose();
     _statusBoard.dispose();
     _noticeBoard.dispose();
     super.dispose();

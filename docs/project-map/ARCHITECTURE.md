@@ -11,7 +11,10 @@ main.dart
         │                                         ├─ SendMissionTracker（送信ボタン状態）
         │                                         ├─ NoticeBoard<String/AppNotice>（時限表示）
         │                                         ├─ MapSelectionController / InitialPoseController
-        │                                         └─ MapConfigRepository（SQLite シングルトン）
+        │                                         ├─ MapConfigRepository（SQLite シングルトン）
+        │                                         └─ ScheduleCoordinator（予定管理・双方向同期の協調役）
+        │                                              ├─ ScheduleRepository（SQLite）
+        │                                              └─ ScheduleSyncService（同期プロトコル実行）
         └─ widgets/（BleHomeTab・BleValuesTab・BleLogsTab・IconTabNavigation ほか）
 models/ … 純粋なデータ・検証・座標変換（Flutter UI への依存は map_geometry の Offset/Size のみ）
 theme/  … 文言・色・ピル表示の一元定義
@@ -43,10 +46,13 @@ theme/  … 文言・色・ピル表示の一元定義
 
 - `MapEditMode` を pose に切り替え → `InitialPoseController` → `InitialPoseMission`（`type: initial_pose`）→ `sendInitialPose`。
 
-### 定時清掃の予約
+### 定時清掃の予定（スマホ ⇄ ロボットの同期）
 
-- 地図タブの時計ボタン → `ScheduleDialog`（時刻・曜日）→ `BleHomeController.sendSchedule` → `BleConnection.sendCleaningSchedule`（`type: cleaning_schedule`）。解除は `cancelSchedule`（`type: cleaning_schedule_cancel`）。
-- アプリは予定を送るだけ。時刻の判定と開始はロボット側のスケジューラが担う（未実装）。契約と責任分担は [../schedule-contract.md](../schedule-contract.md)。
+- 予定はスマホの SQLite（`ScheduleRepository`）とロボットの DB の両方が持つ。複数件。食い違いは `revision` が大きい方を採用し、同じ番号で違う内容ならロボットを正とする。削除は墓標（`deleted`）で伝える。
+- 地図タブの時計ボタン → `ScheduleDialog` → `ScheduleDialogHost`（`ScheduleCoordinator` が提供）→ `ScheduleCoordinator`（保存 → 接続中なら `ScheduleSyncService.sync()`）。接続が確立した直後にも自動で同期する。
+- BLE: `schedule_pull`（1件ずつ取得。応答は Response Characteristic に JSON）／`schedule_upsert`（1件反映）。
+- 時刻の判定と開始はロボット側のスケジューラが担う（未実装）。契約と責任分担は [../schedule-contract.md](../schedule-contract.md)。
+- SLAM の地図の受信: 地図管理ダイアログの「ロボットから地図を受信」→ `RobotMapReceiver` が `map_info` / `map_chunk` で BLE から分割受信し、PGM は PNG に変換して地図として登録する（ロボット側は未実装）。契約は [../map-transfer-contract.md](../map-transfer-contract.md)。
 
 ### ロボット側（このリポジトリの外）
 

@@ -2,8 +2,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-import 'ble_status_indicator.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_strings.dart';
 
 class IconTabNavigation extends StatelessWidget {
   final int currentIndex;
@@ -30,53 +30,70 @@ class IconTabNavigation extends StatelessWidget {
               color: Colors.white.withValues(alpha: 0.35),
             ),
             child: BottomNavigationBar(
-                currentIndex: currentIndex,
-                onTap: onTap,
-                type: BottomNavigationBarType.fixed,
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                iconSize: 28,
-                selectedItemColor: AppColors.onColor,
-                unselectedItemColor: AppColors.onColor,
-                selectedIconTheme: IconThemeData(
-                  size: 29,
-                  color: AppColors.action,
-                ),
-                unselectedIconTheme: const IconThemeData(
-                  size: 28,
-                  color: AppColors.onColor,
-                ),
-                selectedLabelStyle: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-                unselectedLabelStyle: const TextStyle(fontSize: 12),
-                selectedFontSize: 12,
-                unselectedFontSize: 12,
-                items: const [
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.tune_outlined),
-                    activeIcon: SelectedTabIcon(icon: Icons.tune),
-                    label: '数値',
-                    tooltip: '数値',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.map_outlined),
-                    activeIcon: SelectedTabIcon(icon: Icons.map),
-                    label: 'マップ',
-                    tooltip: 'マップ',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.list_alt_outlined),
-                    activeIcon: SelectedTabIcon(icon: Icons.list_alt),
-                    label: 'ログ',
-                    tooltip: 'ログ',
-                  ),
-                ],
+              currentIndex: currentIndex,
+              onTap: onTap,
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              iconSize: 28,
+              selectedItemColor: AppColors.onColor,
+              unselectedItemColor: AppColors.onColor,
+              selectedIconTheme: const IconThemeData(
+                size: 29,
+                color: AppColors.action,
               ),
+              unselectedIconTheme: const IconThemeData(
+                size: 28,
+                color: AppColors.onColor,
+              ),
+              selectedLabelStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+              unselectedLabelStyle: const TextStyle(fontSize: 12),
+              selectedFontSize: 12,
+              unselectedFontSize: 12,
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.layers_outlined),
+                  activeIcon: SelectedTabIcon(icon: Icons.layers),
+                  label: AppStrings.mapsTabLabel,
+                  tooltip: AppStrings.mapsTabLabel,
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.map_outlined),
+                  activeIcon: SelectedTabIcon(icon: Icons.map),
+                  label: AppStrings.mapTabLabel,
+                  tooltip: AppStrings.mapTabLabel,
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.event_note_outlined),
+                  activeIcon: SelectedTabIcon(icon: Icons.event_note),
+                  label: AppStrings.scheduleTabLabel,
+                  tooltip: AppStrings.scheduleTabLabel,
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.list_alt_outlined),
+                  activeIcon: SelectedTabIcon(icon: Icons.list_alt),
+                  label: AppStrings.logsTabLabel,
+                  tooltip: AppStrings.logsTabLabel,
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+}
+
+class SelectedTabIcon extends StatelessWidget {
+  final IconData icon;
+
+  const SelectedTabIcon({super.key, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Icon(icon, color: AppColors.action, size: 29);
   }
 }

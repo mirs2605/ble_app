@@ -41,20 +41,19 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: MapManagementButton(
+          body: MapManagementPanel(
             activeMap: active,
             maps: const [active, other],
             onSelect: (_) async {},
             onAdd: (_) async {},
             onDelete: (map) async => deleted = map,
+            onDone: () {},
             imageStorage: storage,
           ),
         ),
       ),
     );
 
-    await tester.tap(find.text(active.name));
-    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.delete_outline));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '削除'));
@@ -68,26 +67,26 @@ void main() {
     tester,
   ) async {
     MapConfig? selected;
+    var done = false;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: MapManagementButton(
+          body: MapManagementPanel(
             activeMap: active,
             maps: const [active, other],
             onSelect: (map) async => selected = map,
             onAdd: (_) async {},
             onDelete: (_) async {},
+            onDone: () => done = true,
           ),
         ),
       ),
     );
 
-    await tester.tap(find.text(active.name));
-    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ListTile, other.name));
     await tester.pumpAndSettle();
 
     expect(selected, other);
-    expect(find.text('地図管理'), findsNothing);
+    expect(done, isTrue);
   });
 }

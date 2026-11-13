@@ -2,9 +2,12 @@
 // このクラスは状態遷移・ログ・再試行方針に徹する。
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
 
-import '../models/cleaning_schedule.dart';
 import '../models/cleaning_zone.dart';
+import '../models/robot_map.dart';
+import '../models/schedule_entry.dart';
 import 'ble_adapter.dart';
 import 'ble_connection.dart';
 import 'flutter_blue_plus_adapter.dart';
@@ -61,6 +64,10 @@ class BleService implements BleConnection {
   static const connectTimeout = Duration(seconds: 10);
   static const responseTimeout = Duration(seconds: 5);
   static const maxPayloadBytes = 4096;
+
+  /// 地図データを1回に受け取る生データの大きさ [bytes]。base64にすると約344文字で、
+  /// JSONの枠を足しても1回の読み取り上限（約512 bytes）に収まる。
+  static const mapChunkBytes = 256;
 
   final BleAdapter _adapter;
   StreamSubscription<void>? _linkLossSub;
@@ -229,24 +236,162 @@ class BleService implements BleConnection {
   }
 
   @override
-  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule) async {
-    if (!schedule.isValid) {
+  Future<bool> pushSchedule(ScheduleEntry entry) async {
+    if (!entry.isValid) {
       _log('❌ 定時清掃の設定が不正です。');
       return false;
     }
-    return _sendJson(schedule.toJson(), label: '定時清掃');
+    return _sendJson({
+      'type': 'schedule_upsert',
+      ...entry.toJson(),
+    }, label: '定時清掃');
   }
 
+  /// 予定を1件ずつ取得する。要求（`schedule_pull`）を書き込み、
+  /// Response Characteristic に置かれた1件分のJSONを読む。
   @override
-  Future<bool> cancelCleaningSchedule() =>
-      _sendJson(const CleaningScheduleCancel().toJson(), label: '定時清掃の解除');
+  Future<List<ScheduleEntry>?> pullSchedules() async {
+    final entries = <ScheduleEntry>[];
+    var count = 1;
+    for (var index = 0; index < count; index++) {
+      Map<String, dynamic>? reply;
+      final ok = await _sendJson(
+        {'type': 'schedule_pull', 'index': index},
+        label: '予定の取得',
+        quiet: true,
+        acceptResponse: (bytes) {
+          reply = _decodeJsonObject(bytes);
+          return reply != null;
+        },
+      );
+      final page = reply;
+      if (!ok || page == null) {
+        _log('❌ 予定を取得できませんでした。');
+        return null;
+      }
+      final total = page['count'];
+      if (total is! int || total < 0) {
+        _log('❌ 予定の件数が不正です。');
+        return null;
+      }
+      count = total.clamp(0, ScheduleEntry.maxEntries);
+      final item = page['item'];
+      if (count == 0 || item is! Map) continue;
+      try {
+        entries.add(ScheduleEntry.fromJson(Map<String, dynamic>.from(item)));
+      } on FormatException catch (e) {
+        _log('⚠️ 不正な予定を読み飛ばしました: ${e.message}');
+      }
+    }
+    return entries;
+  }
+
+  /// 地図の説明を取得する（`map_info`）。応答は Response のJSON。
+  @override
+  Future<RobotMapInfo?> pullMapInfo() async {
+    Map<String, dynamic>? reply;
+    final ok = await _sendJson(
+      {'type': 'map_info'},
+      label: '地図の情報',
+      acceptResponse: (bytes) {
+        reply = _decodeJsonObject(bytes);
+        return reply != null;
+      },
+    );
+    final json = reply;
+    if (!ok || json == null) {
+      _log('❌ ロボットの地図情報を取得できませんでした。');
+      return null;
+    }
+    try {
+      return RobotMapInfo.fromJson(json);
+    } on FormatException catch (e) {
+      _log('❌ 地図情報が不正です: ${e.message}');
+      return null;
+    }
+  }
+
+  /// 地図データを [mapChunkBytes] ずつ取得する（`map_chunk`）。
+  /// 応答は `{"offset":N,"data":"<base64>"}`。1回の読み取りが約512 bytesまでのため、
+  /// 生データは小さく区切る。CRC32が付いていれば全体を検証する。
+  @override
+  Future<Uint8List?> pullMapData(
+    RobotMapInfo info, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final data = BytesBuilder(copy: false);
+    var received = 0;
+    onProgress?.call(0, info.size);
+    while (received < info.size) {
+      final length = min(mapChunkBytes, info.size - received);
+      final offset = received;
+      Uint8List? chunk;
+      final ok = await _sendJson(
+        {'type': 'map_chunk', 'offset': offset, 'length': length},
+        label: '地図データ',
+        quiet: true,
+        acceptResponse: (bytes) {
+          chunk = _decodeMapChunk(bytes, offset: offset, maxLength: length);
+          return chunk != null;
+        },
+      );
+      final piece = chunk;
+      if (!ok || piece == null) {
+        _log('❌ 地図データの受信に失敗しました ($received/${info.size} bytes)。');
+        return null;
+      }
+      data.add(piece);
+      received += piece.length;
+      onProgress?.call(received, info.size);
+    }
+    final bytes = data.takeBytes();
+    final expected = info.crc32;
+    if (expected != null && crc32(bytes) != expected) {
+      _log('❌ 地図データが壊れています（CRC32が一致しません）。');
+      return null;
+    }
+    return bytes;
+  }
+
+  static Uint8List? _decodeMapChunk(
+    List<int> bytes, {
+    required int offset,
+    required int maxLength,
+  }) {
+    final json = _decodeJsonObject(bytes);
+    if (json == null || json['offset'] != offset) return null;
+    final encoded = json['data'];
+    if (encoded is! String) return null;
+    try {
+      final chunk = base64Decode(encoded);
+      // 空・要求より長い応答は受け付けない（受信が進まず止まらなくなるため）。
+      return chunk.isEmpty || chunk.length > maxLength ? null : chunk;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static Map<String, dynamic>? _decodeJsonObject(List<int> bytes) {
+    try {
+      final decoded = jsonDecode(utf8.decode(bytes));
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+    } on FormatException {
+      return null;
+    }
+  }
 
   /// JSON化可能なオブジェクトを改行区切りでBLE送信する共通実装。
   ///
   /// 接続チェック・チャンク分割・ACK確認を担い、上位メソッドはバリデーションのみ。
+  ///
+  /// [acceptResponse] を渡すと、応答が `ACK` かどうかの代わりにそれで成否を決める
+  /// （予定の取得のように、応答にデータが載る場合）。[quiet] は送信内容と
+  /// 完了のログを省く（同期で何度も呼ぶため）。
   Future<bool> _sendJson(
     Map<String, dynamic> json, {
     required String label,
+    bool Function(List<int> response)? acceptResponse,
+    bool quiet = false,
   }) async {
     if (!_isReady) {
       _log('❌ 未接続です。先に接続してください。');
@@ -281,8 +426,10 @@ class BleService implements BleConnection {
         _setStatus(BleStatus.connected);
         return false;
       }
-      _log('📤 $label送信中 (${bytes.length} bytes)...');
-      _log('   $jsonStr');
+      if (!quiet) {
+        _log('📤 $label送信中 (${bytes.length} bytes)...');
+        _log('   $jsonStr');
+      }
 
       try {
         await _adapter.writeChunks(BlePayloadChunker.split(bytes, payloadSize));
@@ -295,7 +442,7 @@ class BleService implements BleConnection {
       if (!expectsAck) {
         _log('BLE書き込み完了。サーバーからACKが返らないため、ROSでの受信・計画結果はPC側で確認してください。');
         _setStatus(BleStatus.connected);
-        return true;
+        return acceptResponse == null;
       }
       late final List<int> response;
       try {
@@ -306,13 +453,16 @@ class BleService implements BleConnection {
         _setStatus(BleStatus.error);
         return false;
       }
-      if (!BleResponse.isAccepted(response)) {
+      final accepted = acceptResponse != null
+          ? acceptResponse(response)
+          : BleResponse.isAccepted(response);
+      if (!accepted) {
         final responseText = utf8.decode(response, allowMalformed: true);
         _log('❌ ロボット側で$labelが拒否されました: $responseText');
         _setStatus(BleStatus.error);
         return false;
       }
-      _log('✅ $label送信完了');
+      if (!quiet) _log('✅ $label送信完了');
       _setStatus(BleStatus.connected);
       return true;
     } catch (e) {

@@ -1,10 +1,14 @@
+import 'dart:typed_data';
+import 'dart:ui';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mirs_ble_app/controllers/ble_home_controller.dart';
 import 'package:mirs_ble_app/models/app_notice.dart';
-import 'package:mirs_ble_app/models/cleaning_schedule.dart';
 import 'package:mirs_ble_app/models/cleaning_zone.dart';
 import 'package:mirs_ble_app/models/map_config.dart';
+import 'package:mirs_ble_app/models/robot_map.dart';
+import 'package:mirs_ble_app/models/schedule_entry.dart';
 import 'package:mirs_ble_app/models/send_button_state.dart';
 import 'package:mirs_ble_app/services/ble_connection.dart';
 import 'package:mirs_ble_app/services/permission_gateway.dart';
@@ -44,19 +48,35 @@ class FakeBleConnection implements BleConnection {
     return sendResult;
   }
 
-  final List<CleaningScheduleMission> schedules = [];
-  int cancelScheduleCalls = 0;
+  /// ロボットが持つ予定（pullSchedules が返す）。null なら取得失敗。
+  List<ScheduleEntry>? remoteSchedules = [];
+  final List<ScheduleEntry> pushed = [];
+  bool pushResult = true;
 
   @override
-  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule) async {
-    schedules.add(schedule);
-    return sendResult;
+  Future<List<ScheduleEntry>?> pullSchedules() async => remoteSchedules;
+
+  @override
+  Future<bool> pushSchedule(ScheduleEntry entry) async {
+    pushed.add(entry);
+    return pushResult;
   }
 
+  /// ロボットの地図（pullMapInfo / pullMapData が返す）。null なら取得失敗。
+  RobotMapInfo? mapInfo;
+  Uint8List? mapData;
+
   @override
-  Future<bool> cancelCleaningSchedule() async {
-    cancelScheduleCalls++;
-    return sendResult;
+  Future<RobotMapInfo?> pullMapInfo() async => mapInfo;
+
+  @override
+  Future<Uint8List?> pullMapData(
+    RobotMapInfo info, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final data = mapData;
+    if (data != null) onProgress?.call(data.length, info.size);
+    return data;
   }
 
   @override
@@ -385,6 +405,69 @@ void main() {
       controller.allMaps
           .firstWhere((map) => map.name == BuiltinMaps.gakuseigenkan.name)
           .id!,
+    );
+  });
+
+  test('範囲を囲ったあとに頂点数を変更すると範囲を保ったまま点数が変わる', () async {
+    final controller = buildController();
+    addTearDown(controller.dispose);
+    await flushAsync();
+
+    const rectangle = [
+      MapPoint(x: 1, y: 1),
+      MapPoint(x: 5, y: 1),
+      MapPoint(x: 5, y: 4),
+      MapPoint(x: 1, y: 4),
+    ];
+    controller.setSelectedMapPoints(rectangle);
+
+    controller.setVertexCount(8);
+    expect(controller.mapSelection.vertexCount, 8);
+    expect(controller.selectedMapPoints, hasLength(8));
+    expect(
+      CleaningZoneMission(polygon: controller.selectedMapPoints).isValid,
+      isTrue,
+    );
+
+    controller.setVertexCount(4);
+    expect(controller.selectedMapPoints, rectangle);
+
+    controller.setVertexCount(3);
+    expect(controller.selectedMapPoints, hasLength(3));
+    expect(
+      CleaningZoneMission(polygon: controller.selectedMapPoints).isValid,
+      isTrue,
+    );
+  });
+
+  test('フリーハンドで囲ったあとにスライダーで頂点数を増減できる', () async {
+    final controller = buildController();
+    addTearDown(controller.dispose);
+    await flushAsync();
+
+    controller.mapSelection.updatePolygonFromPath(const [
+      Offset(280, 100),
+      Offset(497, 225),
+      Offset(497, 475),
+      Offset(280, 600),
+      Offset(63, 475),
+      Offset(63, 225),
+    ], const Size(561, 775));
+    controller.setSelectedMapPoints(controller.mapSelection.points);
+    expect(controller.selectedMapPoints, hasLength(6));
+
+    controller.setVertexCount(4);
+    expect(controller.selectedMapPoints, hasLength(4));
+    expect(
+      CleaningZoneMission(polygon: controller.selectedMapPoints).isValid,
+      isTrue,
+    );
+
+    controller.setVertexCount(10);
+    expect(controller.selectedMapPoints, hasLength(10));
+    expect(
+      CleaningZoneMission(polygon: controller.selectedMapPoints).isValid,
+      isTrue,
     );
   });
 }
