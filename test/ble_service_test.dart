@@ -295,7 +295,7 @@ void main() {
     expect(adapter.writeCalls, 0);
   });
 
-  test('応答拒否でエラーになる', () async {
+  test('応答拒否は送信失敗だが接続は保つ', () async {
     final adapter = FakeBleAdapter()..response = const [78, 65, 67, 75];
     final logs = <String>[];
     final statuses = <BleStatus>[];
@@ -308,11 +308,20 @@ void main() {
     );
 
     expect(sent, isFalse);
-    expect(statuses.last, BleStatus.error);
+    expect(statuses.last, BleStatus.connected);
+    expect(service.status, BleStatus.connected);
+    expect(adapter.disconnectCalls, 0);
     expect(logs.any((l) => l.contains('拒否されました')), isTrue);
+
+    // 拒否の後も同じ接続のまま送り直せる。
+    adapter.response = const [65, 67, 75];
+    expect(
+      await service.sendCleaningZone(const CleaningZoneMission(polygon: _quad)),
+      isTrue,
+    );
   });
 
-  test('応答タイムアウトでエラーになる', () async {
+  test('応答タイムアウトでは回線を切ってエラーにする（再接続できるように）', () async {
     final adapter = FakeBleAdapter()
       ..readError = const BleAdapterException(
         BleAdapterFailure.responseTimeout,
@@ -328,6 +337,7 @@ void main() {
 
     expect(sent, isFalse);
     expect(statuses.last, BleStatus.error);
+    expect(adapter.disconnectCalls, 1);
   });
 
   test('送信サイズ取得不可でエラーになる', () async {

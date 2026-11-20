@@ -413,7 +413,7 @@ class BleService implements BleConnection {
         payloadSize = await _adapter.currentPayloadSize();
       } on BleAdapterException {
         _log('❌ BLEの送信可能サイズを取得できません。');
-        _setStatus(BleStatus.error);
+        await _abandonLink();
         return false;
       }
       if (bytes.length > maxPayloadBytes) {
@@ -435,8 +435,7 @@ class BleService implements BleConnection {
         await _adapter.writeChunks(BlePayloadChunker.split(bytes, payloadSize));
       } on BleAdapterException catch (e) {
         _log('❌ 送信エラー: ${e.detail}');
-        _isReady = false;
-        _setStatus(BleStatus.error);
+        await _abandonLink();
         return false;
       }
       if (!expectsAck) {
@@ -449,17 +448,20 @@ class BleService implements BleConnection {
         response = await _adapter.readResponse(timeout: responseTimeout);
       } on BleAdapterException catch (e) {
         _log('❌ 送信エラー: ${e.detail}');
-        _isReady = false;
-        _setStatus(BleStatus.error);
+        await _abandonLink();
         return false;
       }
       final accepted = acceptResponse != null
           ? acceptResponse(response)
           : BleResponse.isAccepted(response);
       if (!accepted) {
+        // 応答は届いている（回線は生きている）。内容の拒否（NACK や
+        // 未対応の要求）は送信の失敗として返し、接続は保つ。ここで error に
+        // すると自動再スキャンが走り、接続中で広告していないロボットが
+        // 見つからずに「未接続」表示のまま送信できなくなる。
         final responseText = utf8.decode(response, allowMalformed: true);
         _log('❌ ロボット側で$labelが拒否されました: $responseText');
-        _setStatus(BleStatus.error);
+        _setStatus(BleStatus.connected);
         return false;
       }
       if (!quiet) _log('✅ $label送信完了');
@@ -467,11 +469,23 @@ class BleService implements BleConnection {
       return true;
     } catch (e) {
       _log('❌ 送信エラー: $e');
-      _setStatus(BleStatus.error);
+      await _abandonLink();
       return false;
     } finally {
       _isSending = false;
     }
+  }
+
+  /// 書き込み・読み取りの失敗で回線が信用できなくなったとき、接続を切って
+  /// error にする。切らずに error にすると、ロボットは接続中のため広告せず、
+  /// 自動再スキャンで見つからないまま復帰できない。切断すればロボットが
+  /// 広告を再開し、自動接続で張り直せる。
+  Future<void> _abandonLink() async {
+    _isReady = false;
+    try {
+      await _adapter.disconnect();
+    } catch (_) {}
+    _setStatus(BleStatus.error);
   }
 
   Future<void> disconnect() async {
