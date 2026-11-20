@@ -55,6 +55,16 @@ class MapImageStorage {
     return path;
   }
 
+  /// 受信した画像データ（PNG）をアプリ領域に保存し、そのパスを返す。
+  Future<String> saveBytes(Uint8List bytes, {String extension = '.png'}) async {
+    final directory = await _mapsDirectory();
+    await directory.create(recursive: true);
+    final path =
+        '${directory.path}/map_${DateTime.now().microsecondsSinceEpoch}$extension';
+    await File(path).writeAsBytes(bytes, flush: true);
+    return path;
+  }
+
   Future<void> delete(String path) async {
     final directory = await _mapsDirectory();
     if (!path.startsWith('${directory.path}/')) return;

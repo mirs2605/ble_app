@@ -12,7 +12,9 @@ class MapSelectionActions extends StatelessWidget {
   final bool canSend;
   final VoidCallback onClear;
   final VoidCallback onSend;
-  final VoidCallback? onSchedule;
+
+  /// 下部中央に並べる追加ボタン（ひな形など）。
+  final Widget? extraAction;
   final SendButtonState sendButtonState;
 
   const MapSelectionActions({
@@ -22,7 +24,7 @@ class MapSelectionActions extends StatelessWidget {
     required this.canSend,
     required this.onClear,
     required this.onSend,
-    this.onSchedule,
+    this.extraAction,
     this.sendButtonState = SendButtonState.ready,
   });
 
@@ -55,17 +57,12 @@ class MapSelectionActions extends StatelessWidget {
                 ),
               ),
             ),
-          if (onSchedule != null)
+          if (extraAction != null)
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: FloatingActionButton(
-                  heroTag: 'schedule',
-                  onPressed: onSchedule,
-                  tooltip: AppStrings.scheduleTooltip,
-                  child: const Icon(Icons.schedule),
-                ),
+                child: extraAction,
               ),
             ),
           if (showSend)

@@ -32,6 +32,9 @@ class FakeBleAdapter implements BleAdapter {
   List<List<int>>? written;
   Completer<void>? gateWrite;
   List<int> response = const [65, 67, 75];
+
+  /// 空でなければ、readResponse が先頭から順に返す（取得系のテスト用）。
+  final List<List<int>> responseQueue = [];
   BleAdapterException? readError;
 
   @override
@@ -90,6 +93,7 @@ class FakeBleAdapter implements BleAdapter {
   Future<List<int>> readResponse({required Duration timeout}) async {
     readCalls++;
     if (readError != null) throw readError!;
+    if (responseQueue.isNotEmpty) return responseQueue.removeAt(0);
     return response;
   }
 
@@ -109,12 +113,12 @@ class FakeBleAdapter implements BleAdapter {
   void emitLinkLoss() => linkLossController.add(null);
 }
 
-BleService buildService(
+BleRobotLink buildService(
   FakeBleAdapter adapter,
   List<String> logs,
   List<BleStatus> statuses,
 ) {
-  return BleService(
+  return BleRobotLink(
     onLog: logs.add,
     onStatusChanged: statuses.add,
     adapter: adapter,
@@ -291,7 +295,7 @@ void main() {
     expect(adapter.writeCalls, 0);
   });
 
-  test('応答拒否でエラーになる', () async {
+  test('応答拒否は送信失敗だが接続は保つ', () async {
     final adapter = FakeBleAdapter()..response = const [78, 65, 67, 75];
     final logs = <String>[];
     final statuses = <BleStatus>[];
@@ -304,11 +308,20 @@ void main() {
     );
 
     expect(sent, isFalse);
-    expect(statuses.last, BleStatus.error);
+    expect(statuses.last, BleStatus.connected);
+    expect(service.status, BleStatus.connected);
+    expect(adapter.disconnectCalls, 0);
     expect(logs.any((l) => l.contains('拒否されました')), isTrue);
+
+    // 拒否の後も同じ接続のまま送り直せる。
+    adapter.response = const [65, 67, 75];
+    expect(
+      await service.sendCleaningZone(const CleaningZoneMission(polygon: _quad)),
+      isTrue,
+    );
   });
 
-  test('応答タイムアウトでエラーになる', () async {
+  test('応答タイムアウトでは回線を切ってエラーにする（再接続できるように）', () async {
     final adapter = FakeBleAdapter()
       ..readError = const BleAdapterException(
         BleAdapterFailure.responseTimeout,
@@ -324,6 +337,7 @@ void main() {
 
     expect(sent, isFalse);
     expect(statuses.last, BleStatus.error);
+    expect(adapter.disconnectCalls, 1);
   });
 
   test('送信サイズ取得不可でエラーになる', () async {

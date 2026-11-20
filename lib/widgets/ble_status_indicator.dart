@@ -2,8 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../services/ble_connection.dart';
-import '../theme/app_colors.dart';
+import '../models/ble_status.dart';
 import '../theme/app_strings.dart';
 import '../theme/pill_style.dart';
 import 'frosted_glass.dart';
@@ -98,87 +97,88 @@ class _BleStatusIndicatorState extends State<BleStatusIndicator>
           BorderSide(color: style.borderColor, width: 1),
         ),
         child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 44),
-              child: ClipRect(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      transitionBuilder: (child, animation) {
-                        final offset =
-                            Tween<Offset>(
-                              begin: const Offset(0, -0.8),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutCubic,
-                              ),
-                            );
-                        return FadeTransition(
-                          opacity: animation,
-                          child: SlideTransition(
-                            position: offset,
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: message == null
-                          ? const SizedBox.shrink(key: ValueKey('hidden'))
-                          : Text(
-                              message,
-                              key: ValueKey(message),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: style.foreground,
-                                fontWeight: FontWeight.bold,
-                              ),
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 44),
+                child: ClipRect(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        transitionBuilder: (child, animation) {
+                          final offset =
+                              Tween<Offset>(
+                                begin: const Offset(0, -0.8),
+                                end: Offset.zero,
+                              ).animate(
+                                CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic,
+                                ),
+                              );
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: offset,
+                              child: child,
                             ),
+                          );
+                        },
+                        child: message == null
+                            ? const SizedBox.shrink(key: ValueKey('hidden'))
+                            : Text(
+                                message,
+                                key: ValueKey(message),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: style.foreground,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: 0,
-            top: 0,
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Material(
-                color: Colors.transparent,
-                shape: const CircleBorder(),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: widget.onPressed,
-                  customBorder: const CircleBorder(),
-                  child: Tooltip(
-                    message: widget.tooltipMessage,
-                    child: Center(
-                      child: AnimatedBuilder(
-                        animation: _checkRotationController,
-                        builder: (context, child) {
-                          if (icon != Icons.check_circle) return child!;
-                          final angle =
-                              _checkRotationController.value * math.pi * 2;
-                          return Transform(
-                            alignment: Alignment.center,
-                            transform: Matrix4.identity()
-                              ..setEntry(3, 2, 0.001)
-                              ..rotateY(angle),
-                            child: child,
-                          );
-                        },
-                        child: Transform.translate(
-                          offset: _iconOpticalCorrection,
-                          child: Icon(icon, color: style.foreground, size: 22),
+            Positioned(
+              left: 0,
+              top: 0,
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Material(
+                  color: Colors.transparent,
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: widget.onPressed,
+                    customBorder: const CircleBorder(),
+                    child: Tooltip(
+                      message: widget.tooltipMessage,
+                      child: Center(
+                        child: AnimatedBuilder(
+                          animation: _checkRotationController,
+                          builder: (context, child) {
+                            if (icon != Icons.check_circle) return child!;
+                            final angle =
+                                _checkRotationController.value * math.pi * 2;
+                            return Transform(
+                              alignment: Alignment.center,
+                              transform: Matrix4.identity()
+                                ..setEntry(3, 2, 0.001)
+                                ..rotateY(angle),
+                              child: child,
+                            );
+                          },
+                          child: Transform.translate(
+                            offset: _iconOpticalCorrection,
+                            child: Icon(icon, color: style.foreground, size: 22),
+                          ),
                         ),
                       ),
                     ),
@@ -186,21 +186,9 @@ class _BleStatusIndicatorState extends State<BleStatusIndicator>
                 ),
               ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
-  }
-}
-
-class SelectedTabIcon extends StatelessWidget {
-  final IconData icon;
-
-  const SelectedTabIcon({super.key, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Icon(icon, color: AppColors.action, size: 29);
   }
 }

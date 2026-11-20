@@ -1,33 +1,19 @@
-// BLE通信のオーケストレーション。送受信の実体は [BleAdapter] に委ね、
-// このクラスは状態遷移・ログ・再試行方針に徹する。
+// BLE接続の確立と維持だけを担う。送受信の実体は [BleAdapter] に委ね、
+// このクラスは状態遷移・ログ・再接続方針に徹する。
+// 要求の運搬は [BleRequestChannel]、送る内容ごとの手順は services/protocol/ が受け持つ。
 import 'dart:async';
-import 'dart:convert';
 
-import '../models/cleaning_schedule.dart';
-import '../models/cleaning_zone.dart';
 import 'ble_adapter.dart';
 import 'ble_connection.dart';
+import 'ble_request_channel.dart';
 import 'flutter_blue_plus_adapter.dart';
 
-/// BLE接続の状態は [BleConnection] 側に定義（循環import回避）。
 /// 既存の `ble_service.dart` からの参照互換のため再exportする。
 export 'ble_connection.dart' show BleStatus;
 export 'ble_protocol.dart'
     show BleUuids, BleTargetMatcher, BleConnectionRequirements;
-
-class BlePayloadChunker {
-  const BlePayloadChunker._();
-
-  static List<List<int>> split(List<int> payload, int chunkSize) {
-    if (chunkSize <= 0) {
-      throw ArgumentError.value(chunkSize, 'chunkSize');
-    }
-    return [
-      for (var offset = 0; offset < payload.length; offset += chunkSize)
-        payload.sublist(offset, (offset + chunkSize).clamp(0, payload.length)),
-    ];
-  }
-}
+export 'ble_request_channel.dart' show BlePayloadChunker, BleResponse;
+export 'ble_robot_link.dart' show BleRobotLink;
 
 class BleReconnectPolicy {
   const BleReconnectPolicy._();
@@ -43,30 +29,16 @@ class BleReconnectPolicy {
   }
 }
 
-class BleResponse {
-  const BleResponse._();
-
-  static bool isAccepted(List<int> bytes) {
-    try {
-      return utf8.decode(bytes, allowMalformed: false) == 'ACK';
-    } on FormatException {
-      return false;
-    }
-  }
-}
-
-/// BLE通信を管理するサービス
-class BleService implements BleConnection {
+/// BLE接続（スキャン・接続・MTU調整・切断の検知・自動再接続）を管理する。
+class BleService implements BleConnection, BleLinkControl {
   static const scanTimeout = Duration(seconds: 8);
   static const connectTimeout = Duration(seconds: 10);
-  static const responseTimeout = Duration(seconds: 5);
-  static const maxPayloadBytes = 4096;
+  static const autoScanInterval = Duration(seconds: 4);
 
   final BleAdapter _adapter;
   StreamSubscription<void>? _linkLossSub;
   Timer? _autoScanTimer;
   bool _isDisposed = false;
-  bool _isSending = false;
   bool _isReady = false;
 
   /// 現在の接続状態
@@ -85,13 +57,19 @@ class BleService implements BleConnection {
     BleAdapter? adapter,
   }) : _adapter = adapter ?? FlutterBluePlusAdapter();
 
+  /// 要求の運搬役が使うアダプタ（同じ接続を共有する）。
+  BleAdapter get adapter => _adapter;
+
+  @override
+  bool get isReady => _isReady;
+
   @override
   void startAutoConnect() {
     if (_isDisposed || _autoScanTimer != null) {
       return;
     }
 
-    _autoScanTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+    _autoScanTimer = Timer.periodic(autoScanInterval, (_) async {
       if (_isDisposed ||
           status == BleStatus.connected ||
           status == BleStatus.connecting ||
@@ -220,115 +198,30 @@ class BleService implements BleConnection {
   }
 
   @override
-  Future<bool> sendCleaningZone(CleaningZoneMission zone) async {
-    if (!zone.isValid) {
-      _log('❌ 清掃範囲が不正です。');
-      return false;
-    }
-    return _sendJson(zone.toJson(), label: '清掃範囲');
-  }
+  void beginTransfer() => _setStatus(BleStatus.sending);
 
   @override
-  Future<bool> sendCleaningSchedule(CleaningScheduleMission schedule) async {
-    if (!schedule.isValid) {
-      _log('❌ 定時清掃の設定が不正です。');
-      return false;
-    }
-    return _sendJson(schedule.toJson(), label: '定時清掃');
+  void endTransfer() {
+    if (_isReady) _setStatus(BleStatus.connected);
   }
 
+  /// 書き込み・読み取りの失敗で回線が信用できなくなったとき、接続を切って
+  /// error にする。切らずに error にすると、ロボットは接続中のため広告せず、
+  /// 自動再スキャンで見つからないまま復帰できない。切断すればロボットが
+  /// 広告を再開し、自動接続で張り直せる。
   @override
-  Future<bool> cancelCleaningSchedule() =>
-      _sendJson(const CleaningScheduleCancel().toJson(), label: '定時清掃の解除');
-
-  /// JSON化可能なオブジェクトを改行区切りでBLE送信する共通実装。
-  ///
-  /// 接続チェック・チャンク分割・ACK確認を担い、上位メソッドはバリデーションのみ。
-  Future<bool> _sendJson(
-    Map<String, dynamic> json, {
-    required String label,
-  }) async {
-    if (!_isReady) {
-      _log('❌ 未接続です。先に接続してください。');
-      return false;
-    }
-    if (_isSending) {
-      _log('⚠️ 送信中です。完了するまで次の送信はできません。');
-      return false;
-    }
-
-    _isSending = true;
-    _setStatus(BleStatus.sending);
+  Future<void> abandonLink() async {
+    _isReady = false;
     try {
-      final jsonStr = jsonEncode(json);
-      final bytes = utf8.encode('$jsonStr\n');
-      final expectsAck = _adapter.hasReadableResponse;
-      late final int payloadSize;
-      try {
-        payloadSize = await _adapter.currentPayloadSize();
-      } on BleAdapterException {
-        _log('❌ BLEの送信可能サイズを取得できません。');
-        _setStatus(BleStatus.error);
-        return false;
-      }
-      if (bytes.length > maxPayloadBytes) {
-        _log('❌ $labelデータが大きすぎます (${bytes.length} bytes)。');
-        _setStatus(BleStatus.connected);
-        return false;
-      }
-      if (!expectsAck && bytes.length > payloadSize) {
-        _log('BLEサーバーが応答特性を持たず、分割データも再構成できないため送信を中止しました。MTUを確認してください。');
-        _setStatus(BleStatus.connected);
-        return false;
-      }
-      _log('📤 $label送信中 (${bytes.length} bytes)...');
-      _log('   $jsonStr');
-
-      try {
-        await _adapter.writeChunks(BlePayloadChunker.split(bytes, payloadSize));
-      } on BleAdapterException catch (e) {
-        _log('❌ 送信エラー: ${e.detail}');
-        _isReady = false;
-        _setStatus(BleStatus.error);
-        return false;
-      }
-      if (!expectsAck) {
-        _log('BLE書き込み完了。サーバーからACKが返らないため、ROSでの受信・計画結果はPC側で確認してください。');
-        _setStatus(BleStatus.connected);
-        return true;
-      }
-      late final List<int> response;
-      try {
-        response = await _adapter.readResponse(timeout: responseTimeout);
-      } on BleAdapterException catch (e) {
-        _log('❌ 送信エラー: ${e.detail}');
-        _isReady = false;
-        _setStatus(BleStatus.error);
-        return false;
-      }
-      if (!BleResponse.isAccepted(response)) {
-        final responseText = utf8.decode(response, allowMalformed: true);
-        _log('❌ ロボット側で$labelが拒否されました: $responseText');
-        _setStatus(BleStatus.error);
-        return false;
-      }
-      _log('✅ $label送信完了');
-      _setStatus(BleStatus.connected);
-      return true;
-    } catch (e) {
-      _log('❌ 送信エラー: $e');
-      _setStatus(BleStatus.error);
-      return false;
-    } finally {
-      _isSending = false;
-    }
+      await _adapter.disconnect();
+    } catch (_) {}
+    _setStatus(BleStatus.error);
   }
 
   Future<void> disconnect() async {
     await _linkLossSub?.cancel();
     _linkLossSub = null;
     _isReady = false;
-    _isSending = false;
     try {
       await _adapter.disconnect();
     } catch (_) {}

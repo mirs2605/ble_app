@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_strings.dart';
+
 class PermissionSettingsButton extends StatelessWidget {
   final VoidCallback onPressed;
 
@@ -10,7 +12,7 @@ class PermissionSettingsButton extends StatelessWidget {
     return FloatingActionButton.small(
       heroTag: 'permission-settings',
       onPressed: onPressed,
-      tooltip: '権限設定を開く',
+      tooltip: AppStrings.openPermissionSettingsTooltip,
       child: const Icon(Icons.settings),
     );
   }

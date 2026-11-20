@@ -1,20 +1,21 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/app_notice.dart';
+import '../models/ble_status.dart';
 import '../models/cleaning_zone.dart';
 import '../models/map_config.dart';
+import '../models/map_geometry.dart';
 import '../models/send_button_state.dart';
-import '../services/ble_connection.dart';
+import '../models/shape_template.dart';
 import '../services/map_selection_controller.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_strings.dart';
 import 'ble_status_indicator.dart';
 import 'status_notification_bar.dart';
 import 'floating_action_controls.dart';
+import 'glass_icon_button.dart';
 import 'map_selection_area.dart';
 import 'map_management_button.dart';
-import 'polygon_form.dart';
 import 'schedule_dialog.dart';
 
 class BleHomeTab extends StatelessWidget {
@@ -34,16 +35,13 @@ class BleHomeTab extends StatelessWidget {
   final bool canSend;
   final SendButtonState sendButtonState;
 
-  final MapConfig activeMap;
-  final List<MapConfig> maps;
-  final Future<void> Function(MapConfig) onMapSelected;
-  final Future<void> Function(MapConfig) onMapAdded;
-  final Future<void> Function(MapConfig) onMapDeleted;
+  /// 点数スライダーの変更通知。null ならスライダーを出さない。
+  final ValueChanged<int>? onVertexCountChanged;
 
-  /// 定時清掃ダイアログの結果を受け取る。null なら定時清掃ボタンを出さない。
-  final ValueChanged<ScheduleDialogResult>? onScheduleResult;
-  final bool canReserveSchedule;
-  final bool canCancelSchedule;
+  /// ひな形（星など）の選択通知。null ならひな形ボタンを出さない。
+  final ValueChanged<ShapeTemplate>? onShapeTemplateSelected;
+
+  final MapConfig activeMap;
 
   const BleHomeTab({
     super.key,
@@ -62,14 +60,9 @@ class BleHomeTab extends StatelessWidget {
     required this.canSend,
     required this.sendButtonState,
     this.onSelectionIdleChanged,
+    this.onVertexCountChanged,
+    this.onShapeTemplateSelected,
     required this.activeMap,
-    required this.maps,
-    required this.onMapSelected,
-    required this.onMapAdded,
-    required this.onMapDeleted,
-    this.onScheduleResult,
-    this.canReserveSchedule = false,
-    this.canCancelSchedule = false,
   });
 
   @override
@@ -84,19 +77,6 @@ class BleHomeTab extends StatelessWidget {
           onLog: onLog,
           sendCompleted: sendCompleted,
           onSelectionIdleChanged: onSelectionIdleChanged,
-        ),
-        Positioned(
-          top: 64,
-          right: 12,
-          child: SafeArea(
-            child: MapManagementButton(
-              activeMap: activeMap,
-              maps: maps,
-              onSelect: onMapSelected,
-              onAdd: onMapAdded,
-              onDelete: onMapDeleted,
-            ),
-          ),
         ),
         _TopLeftStatus(
           status: status,
@@ -114,157 +94,195 @@ class BleHomeTab extends StatelessWidget {
           sendButtonState: sendButtonState,
           onClear: onClearSelection,
           onSend: onSend,
-          onSchedule: onScheduleResult == null
+          extraAction: onShapeTemplateSelected == null
               ? null
-              : () async {
-                  final result = await showScheduleDialog(
-                    context,
-                    canReserve: canReserveSchedule,
-                    canCancel: canCancelSchedule,
-                  );
-                  if (result != null) onScheduleResult!(result);
-                },
+              : ShapeTemplateButton(onSelected: onShapeTemplateSelected!),
         ),
+        if (onVertexCountChanged != null)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 88,
+            child: VertexCountSlider(
+              value: mapSelection.vertexCount,
+              onChanged: onVertexCountChanged!,
+            ),
+          ),
       ],
     );
   }
 }
 
-/// 数値入力タブ。フォームのTextEditingControllerはこのWidgetが所有し、
-/// 入力値のパースと地図選択からの同期もここで完結する。
-/// 送信の可否・実行はController（[canSendPolygon]/[onSendPolygon]）に委ねる。
-class BleValuesTab extends StatefulWidget {
+/// 星などのひな形を選ぶボタン。選ぶと地図中央に範囲が置かれる。
+class ShapeTemplateButton extends StatelessWidget {
+  final ValueChanged<ShapeTemplate> onSelected;
+
+  const ShapeTemplateButton({super.key, required this.onSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<ShapeTemplate>(
+      tooltip: AppStrings.shapeTemplateTooltip,
+      onSelected: onSelected,
+      itemBuilder: (context) => [
+        for (final template in ShapeTemplate.all)
+          PopupMenuItem<ShapeTemplate>(
+            value: template,
+            child: Text(
+              AppStrings.shapeTemplateItem(
+                template.label,
+                template.vertexCount,
+              ),
+            ),
+          ),
+      ],
+      child: const GlassIconButton(icon: Icons.star_outline),
+    );
+  }
+}
+
+/// 清掃範囲の点数を選ぶスライダー。
+class VertexCountSlider extends StatelessWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  const VertexCountSlider({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const min = MapGeometry.minFreehandVertexCount;
+    const max = MapGeometry.maxFreehandVertexCount;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            Text(
+              AppStrings.vertexCountLabel(value),
+              style: const TextStyle(color: Colors.white),
+            ),
+            Expanded(
+              child: Slider(
+                value: value.toDouble(),
+                min: min.toDouble(),
+                max: max.toDouble(),
+                divisions: max - min,
+                label: '$value',
+                onChanged: (v) => onChanged(v.round()),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 地図タブ。地図の切替・追加・削除・ロボットからの受信を行う。
+class MapSwitchTab extends StatelessWidget {
   final BleStatus status;
   final String? statusAnnouncement;
   final AppNotice? notice;
-  final List<MapPoint> selectedMapPoints;
-  final ValueChanged<List<MapPoint>> onSendPolygon;
-  final bool Function(List<MapPoint> polygon) canSendPolygon;
   final VoidCallback onStatusPressed;
-  final SendButtonState sendButtonState;
+  final MapConfig activeMap;
+  final List<MapConfig> maps;
+  final Future<void> Function(MapConfig) onMapSelected;
+  final Future<void> Function(MapConfig) onMapAdded;
+  final Future<void> Function(MapConfig) onMapDeleted;
 
-  const BleValuesTab({
+  /// 地図を選んだ・追加した・受信したあとに呼ぶ（マップ画面へ戻る）。
+  final VoidCallback onDone;
+  final MapReceiveHost? mapReceiveHost;
+
+  const MapSwitchTab({
     super.key,
     required this.status,
     required this.statusAnnouncement,
     required this.notice,
-    required this.selectedMapPoints,
-    required this.onSendPolygon,
-    required this.canSendPolygon,
     required this.onStatusPressed,
-    required this.sendButtonState,
+    required this.activeMap,
+    required this.maps,
+    required this.onMapSelected,
+    required this.onMapAdded,
+    required this.onMapDeleted,
+    required this.onDone,
+    this.mapReceiveHost,
   });
 
   @override
-  State<BleValuesTab> createState() => _BleValuesTabState();
+  Widget build(BuildContext context) {
+    return _TabWithStatusOverlay(
+      status: status,
+      announcement: statusAnnouncement,
+      notice: notice,
+      onStatusPressed: onStatusPressed,
+      padding: const EdgeInsets.fromLTRB(0, 72, 0, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              AppStrings.mapsTitle,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          Expanded(
+            child: MapManagementPanel(
+              activeMap: activeMap,
+              maps: maps,
+              onSelect: onMapSelected,
+              onAdd: onMapAdded,
+              onDelete: onMapDeleted,
+              onDone: onDone,
+              receiveHost: mapReceiveHost,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _BleValuesTabState extends State<BleValuesTab> {
-  static const _polygonDefaults = [
-    [1.0, 1.0],
-    [2.5, 1.0],
-    [4.0, 2.0],
-    [4.0, 3.0],
-    [2.5, 3.0],
-    [1.0, 2.0],
-  ];
+/// 予定タブ。登録済みの定時清掃を確認し、有効切替・削除・追加・ロボットとの同期を行う。
+class ScheduleTab extends StatelessWidget {
+  final BleStatus status;
+  final String? statusAnnouncement;
+  final AppNotice? notice;
+  final VoidCallback onStatusPressed;
 
-  // --- 清掃範囲フォーム ---
-  late final List<TextEditingController> _xControllers;
-  late final List<TextEditingController> _yControllers;
+  /// null なら予定機能が使えない（一覧は空として扱う）。
+  final ScheduleDialogHost? host;
 
-  @override
-  void initState() {
-    super.initState();
-    _xControllers = List.generate(
-      _polygonDefaults.length,
-      (i) => TextEditingController(text: _polygonDefaults[i][0].toString()),
-    );
-    _yControllers = List.generate(
-      _polygonDefaults.length,
-      (i) => TextEditingController(text: _polygonDefaults[i][1].toString()),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant BleValuesTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 地図タブでの選択を6点フォームへ反映する。
-    if (!listEquals(oldWidget.selectedMapPoints, widget.selectedMapPoints) &&
-        widget.selectedMapPoints.length == _xControllers.length) {
-      for (int i = 0; i < _xControllers.length; i++) {
-        _xControllers[i].text = widget.selectedMapPoints[i].x.toStringAsFixed(
-          2,
-        );
-        _yControllers[i].text = widget.selectedMapPoints[i].y.toStringAsFixed(
-          2,
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final c in [..._xControllers, ..._yControllers]) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  /// 清掃範囲フォーム値を多角形にパースする。1つでも不正なら空リストを返す。
-  List<MapPoint> _readPolygon() {
-    final polygon = <MapPoint>[];
-    for (int i = 0; i < _xControllers.length; i++) {
-      final x = double.tryParse(_xControllers[i].text);
-      final y = double.tryParse(_yControllers[i].text);
-      if (x == null || y == null) return <MapPoint>[];
-      polygon.add(MapPoint(x: x, y: y));
-    }
-    return polygon;
-  }
+  const ScheduleTab({
+    super.key,
+    required this.status,
+    required this.statusAnnouncement,
+    required this.notice,
+    required this.onStatusPressed,
+    this.host,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final polygon = _readPolygon();
-    return Stack(
-      children: [
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 56),
-                  const Text(
-                    AppStrings.cleaningAreaTitle,
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  const SizedBox(height: 8),
-                  PolygonForm(
-                    xControllers: _xControllers,
-                    yControllers: _yControllers,
-                  ),
-                  // 清掃範囲の送信はBottomSendActionのFABで行うため余白を確保。
-                  const SizedBox(height: 80),
-                ],
-              ),
-            ),
-          ),
-        ),
-        _TopLeftStatus(
-          status: widget.status,
-          announcement: widget.statusAnnouncement,
-          notice: widget.notice,
-          onPressed: widget.onStatusPressed,
-        ),
-        BottomSendAction(
-          heroTag: 'send-values',
-          enabled: widget.canSendPolygon(polygon),
-          onPressed: () => widget.onSendPolygon(polygon),
-          state: widget.sendButtonState,
-        ),
-      ],
+    final host = this.host;
+    return _TabWithStatusOverlay(
+      status: status,
+      announcement: statusAnnouncement,
+      notice: notice,
+      onStatusPressed: onStatusPressed,
+      padding: const EdgeInsets.fromLTRB(16, 72, 16, 0),
+      child: host == null
+          ? const Text(AppStrings.scheduleEmpty)
+          : SchedulePanel(host: host),
     );
   }
 }
@@ -287,47 +305,75 @@ class BleLogsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _TabWithStatusOverlay(
+      status: status,
+      announcement: statusAnnouncement,
+      notice: notice,
+      onStatusPressed: onStatusPressed,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 56),
+          const Text(
+            AppStrings.logsTitle,
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.logBackground,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.all(8),
+              child: ListView.builder(
+                itemCount: logs.length,
+                itemBuilder: (_, index) => Text(
+                  logs[index],
+                  style: const TextStyle(
+                    color: AppColors.logText,
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 上部に Bluetooth 状態・通知バーを重ねるタブ共通の枠。
+class _TabWithStatusOverlay extends StatelessWidget {
+  final BleStatus status;
+  final String? announcement;
+  final AppNotice? notice;
+  final VoidCallback onStatusPressed;
+  final EdgeInsetsGeometry padding;
+  final Widget child;
+
+  const _TabWithStatusOverlay({
+    required this.status,
+    required this.announcement,
+    required this.notice,
+    required this.onStatusPressed,
+    required this.padding,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Stack(
       children: [
         SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 56),
-                const Text(
-                  AppStrings.logsTitle,
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.logBackground,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: ListView.builder(
-                      itemCount: logs.length,
-                      itemBuilder: (_, index) => Text(
-                        logs[index],
-                        style: const TextStyle(
-                          color: AppColors.logText,
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          child: Padding(padding: padding, child: child),
         ),
         _TopLeftStatus(
           status: status,
-          announcement: statusAnnouncement,
+          announcement: announcement,
           notice: notice,
           onPressed: onStatusPressed,
         ),

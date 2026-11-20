@@ -8,6 +8,7 @@ import '../models/map_config.dart';
 import '../models/map_geometry.dart';
 import '../services/map_selection_controller.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_strings.dart';
 
 class MapSelectionArea extends StatefulWidget {
   /// 選択状態の所有者は親（BleHomeController）。
@@ -88,6 +89,126 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
     );
   }
 
+  void _updateViewportTransform(ScaleUpdateDetails details, Offset focalDelta) {
+    _wasTransforming = true;
+    final scaleDelta = details.scale / _lastScale;
+    _lastScale = details.scale;
+    final next = vm.Matrix4.identity()
+      ..translateByDouble(
+        details.localFocalPoint.dx,
+        details.localFocalPoint.dy,
+        0,
+        1,
+      )
+      ..scaleByDouble(scaleDelta, scaleDelta, 1, 1)
+      ..translateByDouble(
+        -details.localFocalPoint.dx,
+        -details.localFocalPoint.dy,
+        0,
+        1,
+      )
+      ..translateByDouble(focalDelta.dx, focalDelta.dy, 0, 1)
+      ..multiply(_mapTransformController.value);
+    final currentScale = next.getMaxScaleOnAxis();
+    if (currentScale >= 1.0 && currentScale <= 4.0) {
+      setState(() => _mapTransformController.value = next);
+    }
+  }
+
+  void _handleScaleStart(
+    ScaleStartDetails details,
+    Size mapSize,
+    Offset mapOffset,
+  ) {
+    _lastFocalPoint = details.localFocalPoint;
+    _lastScale = 1.0;
+    if (details.pointerCount > 1) {
+      _selectionController.cancelGesture();
+      _freehandPath.clear();
+    } else {
+      final local = _toLocalMapPoint(
+        details.localFocalPoint,
+        mapSize,
+        mapOffset,
+      );
+      if (!_selectionController.startGesture(local, mapSize, _mapConfig)) {
+        return;
+      }
+      setState(() {
+        if (_selectionController.showsMagnifier) {
+          _magnifierPosition = details.localFocalPoint;
+        } else if (_selectionController.isDrawing) {
+          _freehandPath
+            ..clear()
+            ..add(local);
+        }
+      });
+    }
+    _reportIdle();
+  }
+
+  void _handleScaleUpdate(
+    ScaleUpdateDetails details,
+    Size mapSize,
+    Offset mapOffset,
+  ) {
+    final previousFocal = _lastFocalPoint ?? details.localFocalPoint;
+    final focalDelta = details.localFocalPoint - previousFocal;
+    _lastFocalPoint = details.localFocalPoint;
+
+    if (details.pointerCount > 1) {
+      _updateViewportTransform(details, focalDelta);
+      return;
+    }
+
+    final local = _toLocalMapPoint(
+      details.localFocalPoint,
+      mapSize,
+      mapOffset,
+    );
+    if (_selectionController.moveActiveSelection(local, mapSize, _mapConfig)) {
+      setState(() {
+        _magnifierPosition = _selectionController.showsMagnifier
+            ? details.localFocalPoint
+            : null;
+        _emitSelection();
+      });
+      return;
+    }
+    if (_selectionController.isDrawing &&
+        !_selectionController.isSelectionComplete) {
+      setState(() => _freehandPath.add(local));
+      _reportIdle();
+    }
+  }
+
+  void _handleScaleEnd(Size mapSize) {
+    _lastFocalPoint = null;
+    _lastScale = 1.0;
+    final wasTransforming = _wasTransforming;
+    _wasTransforming = false;
+    final wasDrawing = _selectionController.isDrawing;
+    setState(() {
+      final completedFreehand = _selectionController.finishGesture(
+        _freehandPath,
+        mapSize,
+        config: _mapConfig,
+        wasTransforming: wasTransforming,
+      );
+      if (completedFreehand) {
+        widget.onLog?.call(
+          AppStrings.freehandSelectedLog(_selectionController.vertexCount),
+        );
+      }
+      _freehandPath.clear();
+      _magnifierPosition = null;
+    });
+    if (!wasTransforming && wasDrawing) {
+      _emitSelection();
+    }
+    _reportIdle();
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -107,131 +228,9 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onScaleStart: (details) {
-            _lastFocalPoint = details.localFocalPoint;
-            _lastScale = 1.0;
-            if (details.pointerCount > 1) {
-              _selectionController.selectionStart = null;
-              _selectionController.activeHandleIndex = null;
-              _freehandPath.clear();
-            } else {
-              final local = _toLocalMapPoint(
-                details.localFocalPoint,
-                mapSize,
-                mapOffset,
-              );
-              final hit = _selectionController.hitHandle(
-                local,
-                mapSize,
-                _mapConfig,
-              );
-              if (_selectionController.points.length >=
-                  MapGeometry.freehandPolygonVertexCount) {
-                if (hit != null) {
-                  setState(() {
-                    _selectionController.activeHandleIndex = hit;
-                    _magnifierPosition = details.localFocalPoint;
-                  });
-                }
-                return;
-              }
-              setState(() {
-                _selectionController.selectionStart = local;
-                _selectionController.activeHandleIndex = null;
-                _freehandPath
-                  ..clear()
-                  ..add(local);
-              });
-            }
-            _reportIdle();
-          },
-          onScaleUpdate: (details) {
-            final previousFocal = _lastFocalPoint ?? details.localFocalPoint;
-            final focalDelta = details.localFocalPoint - previousFocal;
-            _lastFocalPoint = details.localFocalPoint;
-
-            if (details.pointerCount > 1) {
-              _wasTransforming = true;
-              final scaleDelta = details.scale / _lastScale;
-              _lastScale = details.scale;
-              final next = vm.Matrix4.identity()
-                ..translateByDouble(
-                  details.localFocalPoint.dx,
-                  details.localFocalPoint.dy,
-                  0,
-                  1,
-                )
-                ..scaleByDouble(scaleDelta, scaleDelta, 1, 1)
-                ..translateByDouble(
-                  -details.localFocalPoint.dx,
-                  -details.localFocalPoint.dy,
-                  0,
-                  1,
-                )
-                ..translateByDouble(focalDelta.dx, focalDelta.dy, 0, 1)
-                ..multiply(_mapTransformController.value);
-              final currentScale = next.getMaxScaleOnAxis();
-              if (currentScale >= 1.0 && currentScale <= 4.0) {
-                setState(() => _mapTransformController.value = next);
-              }
-              return;
-            }
-
-            final local = _toLocalMapPoint(
-              details.localFocalPoint,
-              mapSize,
-              mapOffset,
-            );
-            if (_selectionController.activeHandleIndex != null &&
-                _selectionController.points.length >=
-                    CleaningZoneMission.minPoints) {
-              final next = List<MapPoint>.from(_selectionController.points);
-              next[_selectionController.activeHandleIndex!] =
-                  MapGeometry.fromLocal(local, mapSize, _mapConfig);
-              setState(() {
-                _selectionController.points = next;
-                _magnifierPosition = details.localFocalPoint;
-                _emitSelection();
-              });
-              return;
-            }
-            if (_selectionController.selectionStart != null &&
-                _selectionController.points.length <
-                    MapGeometry.freehandPolygonVertexCount) {
-              setState(() => _freehandPath.add(local));
-              _reportIdle();
-            }
-          },
-          onScaleEnd: (_) {
-            _lastFocalPoint = null;
-            _lastScale = 1.0;
-            final wasTransforming = _wasTransforming;
-            _wasTransforming = false;
-            final wasDrawing = _selectionController.selectionStart != null;
-            setState(() {
-              if (!wasTransforming && wasDrawing) {
-                _selectionController.updatePolygonFromPath(
-                  _freehandPath,
-                  mapSize,
-                  _mapConfig,
-                );
-              }
-              _selectionController.selectionStart = null;
-              if (!wasTransforming &&
-                  _selectionController.points.length ==
-                      MapGeometry.freehandPolygonVertexCount &&
-                  _selectionController.activeHandleIndex == null) {
-                widget.onLog?.call('🖐️ 6点の範囲を選択しました');
-              }
-              _selectionController.activeHandleIndex = null;
-              _freehandPath.clear();
-              _magnifierPosition = null;
-            });
-            if (!wasTransforming && wasDrawing) {
-              _emitSelection();
-            }
-            _reportIdle();
-          },
+          onScaleStart: (d) => _handleScaleStart(d, mapSize, mapOffset),
+          onScaleUpdate: (d) => _handleScaleUpdate(d, mapSize, mapOffset),
+          onScaleEnd: (_) => _handleScaleEnd(mapSize),
           child: RepaintBoundary(
             child: Stack(
               fit: StackFit.expand,
@@ -267,6 +266,8 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                                       sendCompleted: widget.sendCompleted,
                                       activeHandle: _selectionController
                                           .activeHandleIndex,
+                                      activeEdge: _selectionController
+                                          .activeEdgeIndex,
                                       freehandPath: List<Offset>.from(
                                         _freehandPath,
                                       ),
@@ -283,7 +284,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
                     ),
                   ),
                 ),
-                if (_selectionController.activeHandleIndex != null &&
+                if (_selectionController.showsMagnifier &&
                     _magnifierPosition != null)
                   _MapMagnifier(
                     position: _magnifierPosition!,
@@ -303,7 +304,7 @@ class _MapSelectionAreaState extends State<MapSelectionArea> {
       BuildContext context,
       Object error,
       StackTrace? trace,
-    ) => const Center(child: Text('地図画像を読み込めません'));
+    ) => const Center(child: Text(AppStrings.mapImageLoadError));
     return isAsset
         ? Image.asset(path, fit: BoxFit.fill, errorBuilder: errorBuilder)
         : Image.file(File(path), fit: BoxFit.fill, errorBuilder: errorBuilder);
@@ -361,6 +362,7 @@ class _MapSelectionPainter extends CustomPainter {
   final MapConfig? mapConfig;
   final bool sendCompleted;
   final int? activeHandle;
+  final int? activeEdge;
   final List<Offset> freehandPath;
 
   /// 地図のズーム倍率。線や点は地図と一緒に拡大されるので、
@@ -372,6 +374,7 @@ class _MapSelectionPainter extends CustomPainter {
     this.mapConfig,
     this.sendCompleted = false,
     this.activeHandle,
+    this.activeEdge,
     this.freehandPath = const [],
     this.zoom = 1.0,
   });
@@ -418,14 +421,42 @@ class _MapSelectionPainter extends CustomPainter {
           ..strokeJoin = StrokeJoin.round,
       );
 
+      if (activeEdge != null &&
+          activeEdge! >= 0 &&
+          activeEdge! < points.length) {
+        final a = MapGeometry.toScreenPoint(
+          points[activeEdge!],
+          size,
+          mapConfig,
+        );
+        final b = MapGeometry.toScreenPoint(
+          points[(activeEdge! + 1) % points.length],
+          size,
+          mapConfig,
+        );
+        canvas.drawLine(
+          a,
+          b,
+          Paint()
+            ..color = AppColors.danger
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = _px(4)
+            ..strokeCap = StrokeCap.round,
+        );
+      }
+
       for (int i = 0; i < points.length; i++) {
         final point = MapGeometry.toScreenPoint(points[i], size, mapConfig);
-        final radius = _px(i == activeHandle ? 7.0 : 5.0);
+        final isEdgeEndpoint =
+            activeEdge != null &&
+            (i == activeEdge || i == (activeEdge! + 1) % points.length);
+        final isActive = i == activeHandle || isEdgeEndpoint;
+        final radius = _px(isActive ? 7.0 : 5.0);
         canvas.drawCircle(
           point,
           radius,
           Paint()
-            ..color = i == activeHandle
+            ..color = isActive
                 ? AppColors.danger
                 : sendCompleted
                 ? AppColors.completed
@@ -441,6 +472,7 @@ class _MapSelectionPainter extends CustomPainter {
       oldDelegate.mapConfig?.id != mapConfig?.id ||
       oldDelegate.sendCompleted != sendCompleted ||
       oldDelegate.activeHandle != activeHandle ||
+      oldDelegate.activeEdge != activeEdge ||
       oldDelegate.freehandPath != freehandPath ||
       oldDelegate.zoom != zoom;
 }

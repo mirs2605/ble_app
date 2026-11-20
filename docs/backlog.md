@@ -28,8 +28,7 @@ P0（Controller分割・Adapter分離・SSOT化・フォーム移管）は完了
 
 ### 2. 残存UI文言の `AppStrings` 寄せ [中/S]
 - `PillStyle` 系の文言は移行済み。未移行は以下（多言語化の完成条件）。
-  - `lib/widgets/icon_tab_navigation.dart`: タブ名・tooltip（数値/マップ/ログ）
-  - `lib/widgets/polygon_form.dart`: `頂点 ${index + 1}`、`X (m)` / `Y (m)`
+  - ※ `icon_tab_navigation.dart` のタブ名は `AppStrings` へ移行済み。`polygon_form.dart` は数値入力タブの廃止で削除済み。
   - `lib/widgets/permission_settings_button.dart`: tooltip（権限設定を開く）
   - ※ `範囲を囲ってください` は通知バーへ移行済み（`AppNotice.encloseRange`）。
     `map_selection_area.dart` の選択完了ログ（🖐️）はログ文のため対象外でよい。
