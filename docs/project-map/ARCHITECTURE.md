@@ -10,12 +10,15 @@ main.dart
         │                                         ├─ PermissionGateway
         │                                         ├─ SendMissionTracker（送信ボタン状態）
         │                                         ├─ NoticeBoard<String/AppNotice>（時限表示）
-        │                                         ├─ MapSelectionController / InitialPoseController
+        │                                         ├─ MapSelectionController（範囲の生成・編集）
+        │                                         ├─ MapCatalog（地図一覧・アクティブ地図）
+        │                                         ├─ RobotMapReceiver（SLAM 地図の受信）
+        │                                         ├─ LogBuffer（ログ）
         │                                         ├─ MapConfigRepository（SQLite シングルトン）
         │                                         └─ ScheduleCoordinator（予定管理・双方向同期の協調役）
         │                                              ├─ ScheduleRepository（SQLite）
         │                                              └─ ScheduleSyncService（同期プロトコル実行）
-        └─ widgets/（BleHomeTab・BleValuesTab・BleLogsTab・IconTabNavigation ほか）
+        └─ widgets/（MapSwitchTab・BleHomeTab・ScheduleTab・BleLogsTab・IconTabNavigation ほか）
 models/ … 純粋なデータ・検証・座標変換（Flutter UI への依存は map_geometry の Offset/Size のみ）
 theme/  … 文言・色・ピル表示の一元定義
 ```
@@ -31,9 +34,9 @@ theme/  … 文言・色・ピル表示の一元定義
 
 ### 清掃範囲の送信
 
-1. `MapSelectionArea` で範囲を指定 → `MapSelectionController` が4頂点を保持。
-   - ドラッグ: `MapGeometry.rectangleFrom`（始点と終点から四角形）
-   - なぞり描き: `MapGeometry.rectangleFromPath`（軌跡を4方向に分けて4隅を決める）
+1. `MapSelectionArea` で範囲を指定 → `MapSelectionController` が頂点列を保持。
+   - なぞり描き: `MapGeometry.polygonFromPath`（軌跡から `vertexCount` 個の頂点の多角形を作る。頂点数はスライダーで変えられ、選択後に変えると作り直す）
+   - ひな形: `ShapeTemplate.placeOn`（星などを地図中央に置く）
    - 頂点のハンドルをドラッグして調整できる（`hitHandle`）。
 2. 画面座標 ⇄ 地図座標（m）の変換は `MapGeometry`（`MapConfig` の resolution / origin を使用）。
 3. `BleHomeController.setSelectedMapPoints` → `canSendPolygon` で検証 → 送信ボタンが有効になる。
@@ -42,17 +45,13 @@ theme/  … 文言・色・ピル表示の一元定義
    - BLE: MTU を調整 → `BlePayloadChunker` で分割して Mission Characteristic（`...abd`）へ書き込む → Response Characteristic（`...abe`）を読み、`ACK` なら成功、`NACK` なら失敗。読み取りできる Response Characteristic は接続の必須条件。
 5. 結果を `SendMissionTracker` が `SendButtonState` に反映し、通知バーとログに表示する。
 
-### 開始地点の送信
-
-- `MapEditMode` を pose に切り替え → `InitialPoseController` → `InitialPoseMission`（`type: initial_pose`）→ `sendInitialPose`。
-
 ### 定時清掃の予定（スマホ ⇄ ロボットの同期）
 
 - 予定はスマホの SQLite（`ScheduleRepository`）とロボットの DB の両方が持つ。複数件。食い違いは `revision` が大きい方を採用し、同じ番号で違う内容ならロボットを正とする。削除は墓標（`deleted`）で伝える。
-- 地図タブの時計ボタン → `ScheduleDialog` → `ScheduleDialogHost`（`ScheduleCoordinator` が提供）→ `ScheduleCoordinator`（保存 → 接続中なら `ScheduleSyncService.sync()`）。接続が確立した直後にも自動で同期する。
+- 予定タブ（`ScheduleTab` → `SchedulePanel`） → `ScheduleDialogHost`（`ScheduleCoordinator` が提供）→ `ScheduleCoordinator`（保存 → 接続中なら `ScheduleSyncService.sync()`）。接続が確立した直後にも自動で同期する。
 - BLE: `schedule_pull`（1件ずつ取得。応答は Response Characteristic に JSON）／`schedule_upsert`（1件反映）。
 - 時刻の判定と開始はロボット側のスケジューラが担う（未実装）。契約と責任分担は [../schedule-contract.md](../schedule-contract.md)。
-- SLAM の地図の受信: 地図管理ダイアログの「ロボットから地図を受信」→ `RobotMapReceiver` が `map_info` / `map_chunk` で BLE から分割受信し、PGM は PNG に変換して地図として登録する（ロボット側は未実装）。契約は [../map-transfer-contract.md](../map-transfer-contract.md)。
+- SLAM の地図の受信: 地図一覧タブ（`MapSwitchTab` → `MapManagementPanel`）の「ロボットから地図を受信」→ `RobotMapReceiver` が `map_info` / `map_chunk` で BLE から分割受信し、PGM は PNG に変換して地図として登録する（ロボット側は未実装）。契約は [../map-transfer-contract.md](../map-transfer-contract.md)。
 
 ### ロボット側（このリポジトリの外）
 

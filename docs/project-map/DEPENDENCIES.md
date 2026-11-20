@@ -4,16 +4,16 @@
 
 ```
 widgets ─✕→ controllers（widgets は Controller を import しない。main.dart が値とコールバックを渡す）
-widgets ─→ services(map_selection_controller, initial_pose_controller, map_image_storage, ble_service の BleStatus) / models / theme
+widgets ─→ services(map_selection_controller, map_image_storage) / models（BleStatus は models/ble_status.dart） / theme
 controllers ─✕→ widgets（controllers は widgets を import しない。画面との窓口 `MapReceiveHost` / `ScheduleDialogHost` は models/ に置き、widgets 側は再 export する）
 controllers/ble_home_controller ─→ services(ほぼ全部) / models / theme/app_strings
   └ 地図一覧・アクティブ地図は controllers/map_catalog.dart（MapCatalog）に委譲。MapImageStorage はファクトリ注入（既定は実物）
 services ─→ models（ble_service・ble_adapter・ble_protocol は models 以外に lib 内依存なし）
-theme/app_strings, pill_style ─→ services/ble_service（BleStatus 用） / models
+theme/app_strings, pill_style ─→ models（BleStatus は models/ble_status.dart）
 models ─→ models のみ
 ```
 
-- `BleStatus` の定義は `ble_connection.dart` にある。`ble_service.dart` が再 export しているため、widgets や theme は `ble_service.dart` から import している（循環 import を避けるため）。
+- `BleStatus` の定義は `models/ble_status.dart` にある。`ble_connection.dart` と `ble_service.dart` は互換のため再 export している。widgets や theme は models から直接 import する。
 - import は相対パスで書かれている（`main.dart` もパッケージ内は相対 import）。
 
 ## 変更時の影響範囲
