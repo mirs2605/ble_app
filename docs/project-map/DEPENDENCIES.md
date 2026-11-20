@@ -8,7 +8,7 @@ widgets ─→ services(map_selection_controller, map_image_storage) / models（
 controllers ─✕→ widgets（controllers は widgets を import しない。画面との窓口 `MapReceiveHost` / `ScheduleDialogHost` は models/ に置き、widgets 側は再 export する）
 controllers/ble_home_controller ─→ services(ほぼ全部) / models / theme/app_strings
   └ 地図一覧・アクティブ地図は controllers/map_catalog.dart（MapCatalog）に委譲。MapImageStorage はファクトリ注入（既定は実物）
-services ─→ models（ble_service・ble_adapter・ble_protocol は models 以外に lib 内依存なし）
+services ─→ models（ble_service → ble_request_channel の `BleLinkControl` だけ。protocol/* → ble_request_channel。ble_robot_link が全部を組み立てる）
 theme/app_strings, pill_style ─→ models（BleStatus は models/ble_status.dart）
 models ─→ models のみ
 ```
@@ -20,7 +20,7 @@ models ─→ models のみ
 
 | 変更するもの | 影響を受けるもの・確認すること |
 |---|---|
-| `BleConnection` のインターフェース | `BleService`、`FakeBleConnection`（`test/ble_home_controller_test.dart`） |
+| `BleConnection` / `RobotLink` と各窓口（`CleaningZoneSender` など） | `BleService`、`BleRobotLink`、各 `protocol/*_client.dart`、`FakeBleConnection`（`test/ble_home_controller_test.dart`） |
 | `BleAdapter` | `FlutterBluePlusAdapter`、`ble_service_test.dart` の Fake |
 | 送信 JSON（`toJson` / `type` / 閉路形式） | ロボット側の `ble_server`（別リポジトリ）。**サーバー側を先に更新してから反映する**（backlog #13） |
 | UUID（`BleUuids`） | `ble_server` の GATT 設定、README の記載 |

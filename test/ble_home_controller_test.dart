@@ -16,7 +16,7 @@ import 'package:mirs_ble_app/services/permission_service.dart';
 import 'package:mirs_ble_app/services/map_config_repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-class FakeBleConnection implements BleConnection {
+class FakeBleConnection implements RobotLink {
   FakeBleConnection({required this.onLog, required this.onStatusChanged});
 
   void Function(String message) onLog;

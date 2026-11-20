@@ -127,7 +127,7 @@ void main() {
 
   BleHomeController build(SimulatedRobotAdapter robot) => BleHomeController(
     connectionFactory: ({required onLog, required onStatusChanged}) =>
-        BleService(
+        BleRobotLink(
           onLog: onLog,
           onStatusChanged: onStatusChanged,
           adapter: robot,

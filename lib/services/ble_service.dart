@@ -1,36 +1,19 @@
-// BLE通信のオーケストレーション。送受信の実体は [BleAdapter] に委ね、
-// このクラスは状態遷移・ログ・再試行方針に徹する。
+// BLE接続の確立と維持だけを担う。送受信の実体は [BleAdapter] に委ね、
+// このクラスは状態遷移・ログ・再接続方針に徹する。
+// 要求の運搬は [BleRequestChannel]、送る内容ごとの手順は services/protocol/ が受け持つ。
 import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
-import 'dart:typed_data';
 
-import '../models/cleaning_zone.dart';
-import '../models/robot_map.dart';
-import '../models/schedule_entry.dart';
 import 'ble_adapter.dart';
 import 'ble_connection.dart';
+import 'ble_request_channel.dart';
 import 'flutter_blue_plus_adapter.dart';
 
-/// BLE接続の状態は [BleConnection] 側に定義（循環import回避）。
 /// 既存の `ble_service.dart` からの参照互換のため再exportする。
 export 'ble_connection.dart' show BleStatus;
 export 'ble_protocol.dart'
     show BleUuids, BleTargetMatcher, BleConnectionRequirements;
-
-class BlePayloadChunker {
-  const BlePayloadChunker._();
-
-  static List<List<int>> split(List<int> payload, int chunkSize) {
-    if (chunkSize <= 0) {
-      throw ArgumentError.value(chunkSize, 'chunkSize');
-    }
-    return [
-      for (var offset = 0; offset < payload.length; offset += chunkSize)
-        payload.sublist(offset, (offset + chunkSize).clamp(0, payload.length)),
-    ];
-  }
-}
+export 'ble_request_channel.dart' show BlePayloadChunker, BleResponse;
+export 'ble_robot_link.dart' show BleRobotLink;
 
 class BleReconnectPolicy {
   const BleReconnectPolicy._();
@@ -46,34 +29,16 @@ class BleReconnectPolicy {
   }
 }
 
-class BleResponse {
-  const BleResponse._();
-
-  static bool isAccepted(List<int> bytes) {
-    try {
-      return utf8.decode(bytes, allowMalformed: false) == 'ACK';
-    } on FormatException {
-      return false;
-    }
-  }
-}
-
-/// BLE通信を管理するサービス
-class BleService implements BleConnection {
+/// BLE接続（スキャン・接続・MTU調整・切断の検知・自動再接続）を管理する。
+class BleService implements BleConnection, BleLinkControl {
   static const scanTimeout = Duration(seconds: 8);
   static const connectTimeout = Duration(seconds: 10);
-  static const responseTimeout = Duration(seconds: 5);
-  static const maxPayloadBytes = 4096;
-
-  /// 地図データを1回に受け取る生データの大きさ [bytes]。base64にすると約344文字で、
-  /// JSONの枠を足しても1回の読み取り上限（約512 bytes）に収まる。
-  static const mapChunkBytes = 256;
+  static const autoScanInterval = Duration(seconds: 4);
 
   final BleAdapter _adapter;
   StreamSubscription<void>? _linkLossSub;
   Timer? _autoScanTimer;
   bool _isDisposed = false;
-  bool _isSending = false;
   bool _isReady = false;
 
   /// 現在の接続状態
@@ -92,13 +57,19 @@ class BleService implements BleConnection {
     BleAdapter? adapter,
   }) : _adapter = adapter ?? FlutterBluePlusAdapter();
 
+  /// 要求の運搬役が使うアダプタ（同じ接続を共有する）。
+  BleAdapter get adapter => _adapter;
+
+  @override
+  bool get isReady => _isReady;
+
   @override
   void startAutoConnect() {
     if (_isDisposed || _autoScanTimer != null) {
       return;
     }
 
-    _autoScanTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+    _autoScanTimer = Timer.periodic(autoScanInterval, (_) async {
       if (_isDisposed ||
           status == BleStatus.connected ||
           status == BleStatus.connecting ||
@@ -227,260 +198,19 @@ class BleService implements BleConnection {
   }
 
   @override
-  Future<bool> sendCleaningZone(CleaningZoneMission zone) async {
-    if (!zone.isValid) {
-      _log('❌ 清掃範囲が不正です。');
-      return false;
-    }
-    return _sendJson(zone.toJson(), label: '清掃範囲');
-  }
+  void beginTransfer() => _setStatus(BleStatus.sending);
 
   @override
-  Future<bool> pushSchedule(ScheduleEntry entry) async {
-    if (!entry.isValid) {
-      _log('❌ 定時清掃の設定が不正です。');
-      return false;
-    }
-    return _sendJson({
-      'type': 'schedule_upsert',
-      ...entry.toJson(),
-    }, label: '定時清掃');
-  }
-
-  /// 予定を1件ずつ取得する。要求（`schedule_pull`）を書き込み、
-  /// Response Characteristic に置かれた1件分のJSONを読む。
-  @override
-  Future<List<ScheduleEntry>?> pullSchedules() async {
-    final entries = <ScheduleEntry>[];
-    var count = 1;
-    for (var index = 0; index < count; index++) {
-      Map<String, dynamic>? reply;
-      final ok = await _sendJson(
-        {'type': 'schedule_pull', 'index': index},
-        label: '予定の取得',
-        quiet: true,
-        acceptResponse: (bytes) {
-          reply = _decodeJsonObject(bytes);
-          return reply != null;
-        },
-      );
-      final page = reply;
-      if (!ok || page == null) {
-        _log('❌ 予定を取得できませんでした。');
-        return null;
-      }
-      final total = page['count'];
-      if (total is! int || total < 0) {
-        _log('❌ 予定の件数が不正です。');
-        return null;
-      }
-      count = total.clamp(0, ScheduleEntry.maxEntries);
-      final item = page['item'];
-      if (count == 0 || item is! Map) continue;
-      try {
-        entries.add(ScheduleEntry.fromJson(Map<String, dynamic>.from(item)));
-      } on FormatException catch (e) {
-        _log('⚠️ 不正な予定を読み飛ばしました: ${e.message}');
-      }
-    }
-    return entries;
-  }
-
-  /// 地図の説明を取得する（`map_info`）。応答は Response のJSON。
-  @override
-  Future<RobotMapInfo?> pullMapInfo() async {
-    Map<String, dynamic>? reply;
-    final ok = await _sendJson(
-      {'type': 'map_info'},
-      label: '地図の情報',
-      acceptResponse: (bytes) {
-        reply = _decodeJsonObject(bytes);
-        return reply != null;
-      },
-    );
-    final json = reply;
-    if (!ok || json == null) {
-      _log('❌ ロボットの地図情報を取得できませんでした。');
-      return null;
-    }
-    try {
-      return RobotMapInfo.fromJson(json);
-    } on FormatException catch (e) {
-      _log('❌ 地図情報が不正です: ${e.message}');
-      return null;
-    }
-  }
-
-  /// 地図データを [mapChunkBytes] ずつ取得する（`map_chunk`）。
-  /// 応答は `{"offset":N,"data":"<base64>"}`。1回の読み取りが約512 bytesまでのため、
-  /// 生データは小さく区切る。CRC32が付いていれば全体を検証する。
-  @override
-  Future<Uint8List?> pullMapData(
-    RobotMapInfo info, {
-    void Function(int received, int total)? onProgress,
-  }) async {
-    final data = BytesBuilder(copy: false);
-    var received = 0;
-    onProgress?.call(0, info.size);
-    while (received < info.size) {
-      final length = min(mapChunkBytes, info.size - received);
-      final offset = received;
-      Uint8List? chunk;
-      final ok = await _sendJson(
-        {'type': 'map_chunk', 'offset': offset, 'length': length},
-        label: '地図データ',
-        quiet: true,
-        acceptResponse: (bytes) {
-          chunk = _decodeMapChunk(bytes, offset: offset, maxLength: length);
-          return chunk != null;
-        },
-      );
-      final piece = chunk;
-      if (!ok || piece == null) {
-        _log('❌ 地図データの受信に失敗しました ($received/${info.size} bytes)。');
-        return null;
-      }
-      data.add(piece);
-      received += piece.length;
-      onProgress?.call(received, info.size);
-    }
-    final bytes = data.takeBytes();
-    final expected = info.crc32;
-    if (expected != null && crc32(bytes) != expected) {
-      _log('❌ 地図データが壊れています（CRC32が一致しません）。');
-      return null;
-    }
-    return bytes;
-  }
-
-  static Uint8List? _decodeMapChunk(
-    List<int> bytes, {
-    required int offset,
-    required int maxLength,
-  }) {
-    final json = _decodeJsonObject(bytes);
-    if (json == null || json['offset'] != offset) return null;
-    final encoded = json['data'];
-    if (encoded is! String) return null;
-    try {
-      final chunk = base64Decode(encoded);
-      // 空・要求より長い応答は受け付けない（受信が進まず止まらなくなるため）。
-      return chunk.isEmpty || chunk.length > maxLength ? null : chunk;
-    } on FormatException {
-      return null;
-    }
-  }
-
-  static Map<String, dynamic>? _decodeJsonObject(List<int> bytes) {
-    try {
-      final decoded = jsonDecode(utf8.decode(bytes));
-      return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
-    } on FormatException {
-      return null;
-    }
-  }
-
-  /// JSON化可能なオブジェクトを改行区切りでBLE送信する共通実装。
-  ///
-  /// 接続チェック・チャンク分割・ACK確認を担い、上位メソッドはバリデーションのみ。
-  ///
-  /// [acceptResponse] を渡すと、応答が `ACK` かどうかの代わりにそれで成否を決める
-  /// （予定の取得のように、応答にデータが載る場合）。[quiet] は送信内容と
-  /// 完了のログを省く（同期で何度も呼ぶため）。
-  Future<bool> _sendJson(
-    Map<String, dynamic> json, {
-    required String label,
-    bool Function(List<int> response)? acceptResponse,
-    bool quiet = false,
-  }) async {
-    if (!_isReady) {
-      _log('❌ 未接続です。先に接続してください。');
-      return false;
-    }
-    if (_isSending) {
-      _log('⚠️ 送信中です。完了するまで次の送信はできません。');
-      return false;
-    }
-
-    _isSending = true;
-    _setStatus(BleStatus.sending);
-    try {
-      final jsonStr = jsonEncode(json);
-      final bytes = utf8.encode('$jsonStr\n');
-      final expectsAck = _adapter.hasReadableResponse;
-      late final int payloadSize;
-      try {
-        payloadSize = await _adapter.currentPayloadSize();
-      } on BleAdapterException {
-        _log('❌ BLEの送信可能サイズを取得できません。');
-        await _abandonLink();
-        return false;
-      }
-      if (bytes.length > maxPayloadBytes) {
-        _log('❌ $labelデータが大きすぎます (${bytes.length} bytes)。');
-        _setStatus(BleStatus.connected);
-        return false;
-      }
-      if (!expectsAck && bytes.length > payloadSize) {
-        _log('BLEサーバーが応答特性を持たず、分割データも再構成できないため送信を中止しました。MTUを確認してください。');
-        _setStatus(BleStatus.connected);
-        return false;
-      }
-      if (!quiet) {
-        _log('📤 $label送信中 (${bytes.length} bytes)...');
-        _log('   $jsonStr');
-      }
-
-      try {
-        await _adapter.writeChunks(BlePayloadChunker.split(bytes, payloadSize));
-      } on BleAdapterException catch (e) {
-        _log('❌ 送信エラー: ${e.detail}');
-        await _abandonLink();
-        return false;
-      }
-      if (!expectsAck) {
-        _log('BLE書き込み完了。サーバーからACKが返らないため、ROSでの受信・計画結果はPC側で確認してください。');
-        _setStatus(BleStatus.connected);
-        return acceptResponse == null;
-      }
-      late final List<int> response;
-      try {
-        response = await _adapter.readResponse(timeout: responseTimeout);
-      } on BleAdapterException catch (e) {
-        _log('❌ 送信エラー: ${e.detail}');
-        await _abandonLink();
-        return false;
-      }
-      final accepted = acceptResponse != null
-          ? acceptResponse(response)
-          : BleResponse.isAccepted(response);
-      if (!accepted) {
-        // 応答は届いている（回線は生きている）。内容の拒否（NACK や
-        // 未対応の要求）は送信の失敗として返し、接続は保つ。ここで error に
-        // すると自動再スキャンが走り、接続中で広告していないロボットが
-        // 見つからずに「未接続」表示のまま送信できなくなる。
-        final responseText = utf8.decode(response, allowMalformed: true);
-        _log('❌ ロボット側で$labelが拒否されました: $responseText');
-        _setStatus(BleStatus.connected);
-        return false;
-      }
-      if (!quiet) _log('✅ $label送信完了');
-      _setStatus(BleStatus.connected);
-      return true;
-    } catch (e) {
-      _log('❌ 送信エラー: $e');
-      await _abandonLink();
-      return false;
-    } finally {
-      _isSending = false;
-    }
+  void endTransfer() {
+    if (_isReady) _setStatus(BleStatus.connected);
   }
 
   /// 書き込み・読み取りの失敗で回線が信用できなくなったとき、接続を切って
   /// error にする。切らずに error にすると、ロボットは接続中のため広告せず、
   /// 自動再スキャンで見つからないまま復帰できない。切断すればロボットが
   /// 広告を再開し、自動接続で張り直せる。
-  Future<void> _abandonLink() async {
+  @override
+  Future<void> abandonLink() async {
     _isReady = false;
     try {
       await _adapter.disconnect();
@@ -492,7 +222,6 @@ class BleService implements BleConnection {
     await _linkLossSub?.cancel();
     _linkLossSub = null;
     _isReady = false;
-    _isSending = false;
     try {
       await _adapter.disconnect();
     } catch (_) {}

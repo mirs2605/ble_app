@@ -20,7 +20,7 @@ import '../theme/app_strings.dart';
 class ScheduleCoordinator extends ChangeNotifier {
   ScheduleCoordinator({
     required ScheduleRepository repository,
-    required BleConnection connection,
+    required ScheduleTransport connection,
     required this.selectedPolygon,
     required this.isConnected,
     required this.onLog,

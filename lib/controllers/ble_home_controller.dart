@@ -48,7 +48,7 @@ class BleHomeController extends ChangeNotifier {
            mapImageStorageFactory ?? MapImageStorage.new,
        _logBuffer = logBuffer ?? LogBuffer() {
     _robotMapReceiver = robotMapReceiver;
-    _connection = (connectionFactory ?? BleService.new)(
+    _connection = (connectionFactory ?? BleRobotLink.new)(
       onLog: _addServiceLog,
       onStatusChanged: _handleStatusChanged,
     );
@@ -74,7 +74,7 @@ class BleHomeController extends ChangeNotifier {
     unawaited(_loadMapConfig());
   }
 
-  late final BleConnection _connection;
+  late final RobotLink _connection;
   final PermissionGateway _permissions;
   final MapCatalog _catalog;
   final MapImageStorage Function() _mapImageStorageFactory;

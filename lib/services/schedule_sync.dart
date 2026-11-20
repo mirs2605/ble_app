@@ -66,7 +66,7 @@ class ScheduleSyncService {
   ScheduleSyncService({required this.repository, required this.connection});
 
   final ScheduleRepository repository;
-  final BleConnection connection;
+  final ScheduleTransport connection;
 
   Future<ScheduleSyncResult> sync() async {
     final remote = await connection.pullSchedules();

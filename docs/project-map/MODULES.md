@@ -37,9 +37,14 @@
 
 | ファイル | 役割 |
 |---|---|
-| `ble_connection.dart` | 抽象 `BleConnection`、`BleConnectionFactory`（`BleStatus` を再 export） |
+| `ble_connection.dart` | 抽象 `BleConnection`（接続だけ）、`RobotLink`（接続 + 各手順の窓口の束）、`BleConnectionFactory` |
+| `ble_robot_link.dart` | 本番の `RobotLink`。接続・運搬・各手順を組み立てて委譲するだけ |
+| `ble_request_channel.dart` | 要求1件の運搬（JSON+LF の分割書き込み・応答の読み取り・同時1件）。応答の意味は解釈しない。`BleReply` / `BleResponse` / `BlePayloadChunker` |
+| `protocol/cleaning_zone_client.dart` | 清掃範囲の送信手順（`CleaningZoneSender`） |
+| `protocol/schedule_client.dart` | 予定の取得・反映の手順（`ScheduleTransport`） |
+| `protocol/robot_map_client.dart` | 地図の受信手順と CRC32 検証（`RobotMapSource`） |
 | `schedule_repository.dart` / `schedule_sync.dart` | 予定の SQLite 永続化（墓標も保持）／ロボットとの同期（`planScheduleSync` は revision で採用側を決める純粋関数） |
-| `ble_service.dart` ★500 | BLE 実装: 自動スキャン・接続・Characteristic の検出・MTU 調整・分割送信・ACK の判定・再接続。`BleStatus` を再 export |
+| `ble_service.dart` | 接続だけ: 自動スキャン・接続・MTU 調整・切断の検知・再接続。回線の失敗時は切断して張り直せる状態に戻す（`BleLinkControl`） |
 | `ble_adapter.dart` | flutter_blue_plus を隠すための抽象 `BleAdapter` と例外・値型 |
 | `flutter_blue_plus_adapter.dart` | `BleAdapter` の本番実装 |
 | `ble_protocol.dart` | UUID 定数、ターゲットの判定、接続要件の判定（いずれも純粋関数） |

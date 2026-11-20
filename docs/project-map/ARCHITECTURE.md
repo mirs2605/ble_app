@@ -5,8 +5,11 @@
 ```
 main.dart
   └─ BleHomePage ──(ChangeNotifier を listen)── BleHomeController   … facade（配線と公開状態のみ）
-        │                                         ├─ BleConnection（抽象）
-        │                                         │    └─ BleService ── BleAdapter（抽象）── FlutterBluePlusAdapter
+        │                                         ├─ RobotLink（抽象: 接続 + 各手順の窓口）
+        │                                         │    └─ BleRobotLink（組み立てのみ）
+        │                                         │         ├─ BleService（接続だけ）── BleAdapter（抽象）── FlutterBluePlusAdapter
+        │                                         │         ├─ BleRequestChannel（要求1件の運搬）
+        │                                         │         └─ CleaningZoneClient / ScheduleClient / RobotMapClient（手順）
         │                                         ├─ PermissionGateway
         │                                         ├─ SendMissionTracker（送信ボタン状態）
         │                                         ├─ NoticeBoard<String/AppNotice>（時限表示）
@@ -23,7 +26,8 @@ models/ … 純粋なデータ・検証・座標変換（Flutter UI への依存
 theme/  … 文言・色・ピル表示の一元定義
 ```
 
-- テストしやすくするための設計: Controller は `BleConnection` と `PermissionGateway` だけに依存し、テストでは Fake に差し替える。`BleService` も `BleAdapter` に依存するため、実機なしでテストできる。
+- テストしやすくするための設計: Controller は `RobotLink` と `PermissionGateway` だけに依存し、テストでは Fake に差し替える。協調役には必要な窓口だけを渡す（`ScheduleSyncService` は `ScheduleTransport`、`RobotMapReceiver` は `RobotMapSource`）。`BleService` も `BleAdapter` に依存するため、実機なしでテストできる。
+- 回線の扱い: 応答が届いたが中身が拒否（`NACK`）のときは送信失敗として返し、接続は保つ。書き込み・読み取りの失敗は切断して error にし、自動接続で張り直す。
 
 ## 主要な処理の流れ
 
@@ -40,7 +44,7 @@ theme/  … 文言・色・ピル表示の一元定義
    - 頂点のハンドルをドラッグして調整できる（`hitHandle`）。
 2. 画面座標 ⇄ 地図座標（m）の変換は `MapGeometry`（`MapConfig` の resolution / origin を使用）。
 3. `BleHomeController.setSelectedMapPoints` → `canSendPolygon` で検証 → 送信ボタンが有効になる。
-4. 送信: `BleHomeController` → `BleConnection.sendCleaningZone(CleaningZoneMission)`。
+4. 送信: `BleHomeController` → `RobotLink.sendCleaningZone(CleaningZoneMission)` → `CleaningZoneClient` → `BleRequestChannel`。
    - JSON の内容: `{"type":"cleaning_zone","frame_id":"map","polygon":[...]}`。ポリゴンは**閉路**（末尾の点＝始点）。
    - BLE: MTU を調整 → `BlePayloadChunker` で分割して Mission Characteristic（`...abd`）へ書き込む → Response Characteristic（`...abe`）を読み、`ACK` なら成功、`NACK` なら失敗。読み取りできる Response Characteristic は接続の必須条件。
 5. 結果を `SendMissionTracker` が `SendButtonState` に反映し、通知バーとログに表示する。

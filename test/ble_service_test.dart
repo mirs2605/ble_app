@@ -113,12 +113,12 @@ class FakeBleAdapter implements BleAdapter {
   void emitLinkLoss() => linkLossController.add(null);
 }
 
-BleService buildService(
+BleRobotLink buildService(
   FakeBleAdapter adapter,
   List<String> logs,
   List<BleStatus> statuses,
 ) {
-  return BleService(
+  return BleRobotLink(
     onLog: logs.add,
     onStatusChanged: statuses.add,
     adapter: adapter,

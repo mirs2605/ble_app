@@ -19,7 +19,7 @@ class RobotMapReceiver extends ChangeNotifier {
     required this.onLog,
   });
 
-  final BleConnection connection;
+  final RobotMapSource connection;
   final Future<String> Function(Uint8List png) saveImage;
   final Future<void> Function(String path) deleteImage;
   final Future<void> Function(MapConfig map) addMap;

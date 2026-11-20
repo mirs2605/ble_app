@@ -110,9 +110,9 @@ void main() {
     });
   });
 
-  group('BleService', () {
-    BleService build(FakeBleAdapter adapter, List<String> logs) =>
-        BleService(onLog: logs.add, onStatusChanged: (_) {}, adapter: adapter);
+  group('BleRobotLink', () {
+    BleRobotLink build(FakeBleAdapter adapter, List<String> logs) =>
+        BleRobotLink(onLog: logs.add, onStatusChanged: (_) {}, adapter: adapter);
 
     List<int> reply(Map<String, dynamic> json) => utf8.encode(jsonEncode(json));
 
