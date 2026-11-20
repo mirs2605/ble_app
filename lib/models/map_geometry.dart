@@ -246,4 +246,19 @@ class MapGeometry {
     }
     return sampled;
   }
+
+  /// 画面上の移動量 [screenDelta] を地図座標系（メートル）の移動量に変換する。
+  static Offset screenDeltaToMeters(
+    Offset screenDelta,
+    Size size, [
+    MapConfig? config,
+  ]) {
+    if (size.width <= 0 || size.height <= 0) return Offset.zero;
+    final wm = config?.widthMeters ?? widthMeters;
+    final hm = config?.heightMeters ?? heightMeters;
+    return Offset(
+      (screenDelta.dx / size.width) * wm,
+      -(screenDelta.dy / size.height) * hm,
+    );
+  }
 }

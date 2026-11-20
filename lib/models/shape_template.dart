@@ -17,17 +17,26 @@ class ShapeTemplate {
 
   int get vertexCount => unitVertices.length;
 
-  /// 地図の中央に、短辺の [sizeRatio] 倍の半径で配置した頂点列を返す。
-  List<MapPoint> placeOn([MapConfig? config, double sizeRatio = 0.35]) {
+  /// 地図の中央座標を返す。
+  static MapPoint centerOn([MapConfig? config]) {
     final ox = config?.originX ?? MapGeometry.originX;
     final oy = config?.originY ?? MapGeometry.originY;
     final wm = config?.widthMeters ?? MapGeometry.widthMeters;
     final hm = config?.heightMeters ?? MapGeometry.heightMeters;
-    final cx = ox + wm / 2;
-    final cy = oy + hm / 2;
+    return MapPoint(x: ox + wm / 2, y: oy + hm / 2);
+  }
+
+  /// 地図の中央に、短辺の [sizeRatio] 倍の半径で配置した頂点列を返す。
+  List<MapPoint> placeOn([MapConfig? config, double sizeRatio = 0.35]) {
+    final wm = config?.widthMeters ?? MapGeometry.widthMeters;
+    final hm = config?.heightMeters ?? MapGeometry.heightMeters;
+    final center = centerOn(config);
     final radius = math.min(wm, hm) * sizeRatio;
     return unitVertices
-        .map((p) => MapPoint(x: cx + p.x * radius, y: cy + p.y * radius))
+        .map(
+          (p) =>
+              MapPoint(x: center.x + p.x * radius, y: center.y + p.y * radius),
+        )
         .toList();
   }
 

@@ -182,9 +182,10 @@ class BleHomeController extends ChangeNotifier {
 
   /// ひな形の形を選択範囲として地図中央に置く。頂点数もひな形に合わせる。
   void applyShapeTemplate(ShapeTemplate template) {
-    mapSelection.vertexCount = template.vertexCount;
-    setSelectedMapPoints(template.placeOn(_catalog.active));
+    mapSelection.applyTemplate(template, _catalog.active);
+    _sendTracker.resetProgress();
     addLog(AppStrings.shapeTemplatePlacedLog(template.label));
+    notifyListeners();
   }
 
   void clearSelection() {
